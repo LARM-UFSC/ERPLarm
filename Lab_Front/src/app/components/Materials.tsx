@@ -6,6 +6,7 @@ interface FormData {
   tipo: string;
   descricao: string;
   quantidade: string;
+  quantidadeMinima: string;
   patrimonio: string;
   modelo: string;
   marca: string;
@@ -18,20 +19,65 @@ export function Materials() {
   const [materialType, setMaterialType] = useState<'consumo' | 'permanente'>('consumo');
   const [materialConsumo, setMaterialConsumo] = useState<MaterialConsumo[]>([]);
   const [materialPermanente, setMaterialPermanente] = useState<MaterialPermanente[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     tipo: '',
     descricao: '',
     quantidade: '',
+    quantidadeMinima: '',
     patrimonio: '',
     modelo: '',
     marca: '',
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) {
+      setMaterialConsumo([]);
+      setMaterialPermanente([]);
+      setHasSearched(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setHasSearched(true);
+
+      const [consumoData, permanenteData] = await Promise.all([
+        materialConsumoService.getAll(),
+        materialPermanenteService.getAll()
+      ]);
+
+      const term = searchTerm.toLowerCase();
+
+      const filteredConsumo = consumoData.filter(m =>
+        m.tipo.toLowerCase().includes(term) ||
+        m.descricao.toLowerCase().includes(term)
+      );
+
+      const filteredPermanente = permanenteData.filter(m =>
+        m.tipo.toLowerCase().includes(term) ||
+        m.patrimonio.toLowerCase().includes(term) ||
+        m.modelo?.toLowerCase().includes(term) ||
+        m.marca?.toLowerCase().includes(term) ||
+        m.descricao?.toLowerCase().includes(term)
+      );
+
+      setMaterialConsumo(filteredConsumo);
+      setMaterialPermanente(filteredPermanente);
+    } catch (error) {
+      console.error('Erro ao buscar materiais:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -50,19 +96,6 @@ export function Materials() {
     }
   };
 
-  const filteredMaterialConsumo = materialConsumo.filter((material) =>
-    material.tipo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    material.descricao.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredMaterialPermanente = materialPermanente.filter((material) =>
-    material.tipo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    material.patrimonio.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    material.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    material.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    material.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -72,6 +105,7 @@ export function Materials() {
           tipo: formData.tipo,
           descricao: formData.descricao,
           quantidade: parseInt(formData.quantidade),
+          quantidade_minima: formData.quantidadeMinima ? parseInt(formData.quantidadeMinima) : undefined,
         };
 
         if (editingMaterial) {
@@ -115,6 +149,7 @@ export function Materials() {
         tipo: consumoMaterial.tipo,
         descricao: consumoMaterial.descricao,
         quantidade: consumoMaterial.quantidade.toString(),
+        quantidadeMinima: consumoMaterial.quantidade_minima?.toString() || '',
         patrimonio: '',
         modelo: '',
         marca: '',
@@ -125,6 +160,7 @@ export function Materials() {
         tipo: permanenteMaterial.tipo,
         descricao: permanenteMaterial.descricao || '',
         quantidade: '',
+        quantidadeMinima: '',
         patrimonio: permanenteMaterial.patrimonio,
         modelo: permanenteMaterial.modelo || '',
         marca: permanenteMaterial.marca || '',
@@ -155,6 +191,7 @@ export function Materials() {
       tipo: '',
       descricao: '',
       quantidade: '',
+      quantidadeMinima: '',
       patrimonio: '',
       modelo: '',
       marca: '',
@@ -253,21 +290,43 @@ export function Materials() {
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4">
-        <div className="flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg">
-          <Search size={20} className="text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por tipo, descrição, patrimônio, modelo ou marca..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg">
+            <Search size={20} className="text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por tipo, descrição, patrimônio, modelo ou marca..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="flex-1 bg-transparent outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {loading ? 'Buscando...' : 'Buscar'}
+          </button>
         </div>
       </div>
 
+      {!hasSearched ? (
+        <div className="bg-card border border-border rounded-lg p-12 text-center">
+          <Package size={48} className="mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Faça uma busca para encontrar materiais</h3>
+          <p className="text-muted-foreground">
+            Digite um tipo, descrição, patrimônio, modelo ou marca e clique em Buscar
+          </p>
+        </div>
+      ) : (
       <div className="space-y-6">
         <div>
-          <h3 className="mb-4 text-lg font-semibold">Material de Consumo</h3>
+          <h3 className="mb-4 text-lg font-semibold">Material de Consumo ({materialConsumo.length})</h3>
+          {materialConsumo.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">Nenhum material de consumo encontrado</p>
+          ) : (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -276,11 +335,12 @@ export function Materials() {
                     <th className="text-left px-6 py-4">Tipo</th>
                     <th className="text-left px-6 py-4">Descrição</th>
                     <th className="text-right px-6 py-4">Quantidade</th>
+                    <th className="text-right px-6 py-4">Qtd. Mínima</th>
                     <th className="text-center px-6 py-4">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMaterialConsumo.map((material) => (
+                  {materialConsumo.map((material: MaterialConsumo) => (
                     <tr key={material.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 text-sm bg-primary/10 text-primary px-2 py-1 rounded">
@@ -290,9 +350,12 @@ export function Materials() {
                       </td>
                       <td className="px-6 py-4">{material.descricao}</td>
                       <td className="px-6 py-4 text-right">
-                        <span className={material.quantidade <= 5 ? 'text-yellow-600 font-medium' : ''}>
+                        <span className={material.quantidade <= (material.quantidade_minima || 5) ? 'text-yellow-600 font-medium' : ''}>
                           {material.quantidade}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-muted-foreground">
+                        {material.quantidade_minima || '-'}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
@@ -318,10 +381,14 @@ export function Materials() {
               </table>
             </div>
           </div>
+          )}
         </div>
 
         <div>
-          <h3 className="mb-4 text-lg font-semibold">Material Permanente</h3>
+          <h3 className="mb-4 text-lg font-semibold">Material Permanente ({materialPermanente.length})</h3>
+          {materialPermanente.length === 0 ? (
+            <p className="text-muted-foreground text-center py-4">Nenhum material permanente encontrado</p>
+          ) : (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -335,7 +402,7 @@ export function Materials() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMaterialPermanente.map((material) => (
+                  {materialPermanente.map((material: MaterialPermanente) => (
                     <tr key={material.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 text-sm bg-primary/10 text-primary px-2 py-1 rounded">
@@ -374,8 +441,10 @@ export function Materials() {
               </table>
             </div>
           </div>
+          )}
         </div>
       </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -432,16 +501,28 @@ export function Materials() {
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block mb-2">Quantidade</label>
-                    <input
-                      type="number"
-                      value={formData.quantidade}
-                      onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
-                      className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
-                      placeholder="Ex: 100"
-                      required
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block mb-2">Quantidade</label>
+                      <input
+                        type="number"
+                        value={formData.quantidade}
+                        onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
+                        className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                        placeholder="Ex: 100"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2">Quantidade Mínima</label>
+                      <input
+                        type="number"
+                        value={formData.quantidadeMinima}
+                        onChange={(e) => setFormData({ ...formData, quantidadeMinima: e.target.value })}
+                        className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                        placeholder="Ex: 10"
+                      />
+                    </div>
                   </div>
                 </>
               ) : (

@@ -40,6 +40,7 @@ export interface MaterialConsumo {
   tipo: string;
   descricao: string;
   quantidade: number;
+  quantidade_minima?: number;
   data_cadastro: string;
   data_atualizacao?: string;
 }
@@ -52,6 +53,43 @@ export interface MaterialPermanente {
   marca?: string;
   descricao?: string;
   data_cadastro: string;
+  data_atualizacao?: string;
+}
+
+export interface Projeto {
+  id: string;
+  nome: string;
+  descricao?: string;
+  status: string;
+  coordenador: string;
+  membros?: string;
+  data_inicio: string;
+  data_previsao: string;
+  data_cadastro: string;
+  data_atualizacao?: string;
+}
+
+export interface ProjetoAtividade {
+  id?: string;
+  projeto_id: string;
+  titulo: string;
+  descricao?: string;
+  status: 'backlog' | 'todo' | 'doing' | 'done';
+  responsavel?: string;
+  data_conclusao?: string;
+  data_cadastro?: string;
+  data_atualizacao?: string;
+}
+
+export interface ProjetoReuniao {
+  id?: string;
+  projeto_id: string;
+  titulo: string;
+  data_reuniao: string;
+  participantes?: string;
+  pauta?: string;
+  resumo?: string;
+  data_cadastro?: string;
   data_atualizacao?: string;
 }
 
@@ -248,6 +286,99 @@ export const materialPermanenteService = {
 
   async delete(id: string): Promise<{ message: string }> {
     return apiRequest<{ message: string }>(`/material-permanente/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Serviço de Projetos
+export const projetosService = {
+  async getAll(): Promise<Projeto[]> {
+    return apiRequest<Projeto[]>('/projetos');
+  },
+
+  async getById(id: string): Promise<Projeto> {
+    return apiRequest<Projeto>(`/projetos/${id}`);
+  },
+
+  async create(projeto: Omit<Projeto, 'id' | 'data_cadastro' | 'data_atualizacao'>): Promise<Projeto> {
+    return apiRequest<Projeto>('/projetos', {
+      method: 'POST',
+      body: JSON.stringify(projeto),
+    });
+  },
+
+  async update(id: string, projeto: Omit<Projeto, 'id' | 'data_cadastro' | 'data_atualizacao'>): Promise<Projeto> {
+    return apiRequest<Projeto>(`/projetos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(projeto),
+    });
+  },
+
+  async delete(id: string): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>(`/projetos/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Serviço de Atividades do Projeto (Kanban)
+export const projetoAtividadesService = {
+  async getAll(projetoId: string): Promise<ProjetoAtividade[]> {
+    return apiRequest<ProjetoAtividade[]>(`/projetos/${projetoId}/atividades`);
+  },
+
+  async getById(projetoId: string, atividadeId: string): Promise<ProjetoAtividade> {
+    return apiRequest<ProjetoAtividade>(`/projetos/${projetoId}/atividades/${atividadeId}`);
+  },
+
+  async create(projetoId: string, atividade: Omit<ProjetoAtividade, 'id' | 'projeto_id' | 'data_cadastro' | 'data_atualizacao'>): Promise<ProjetoAtividade> {
+    return apiRequest<ProjetoAtividade>(`/projetos/${projetoId}/atividades`, {
+      method: 'POST',
+      body: JSON.stringify(atividade),
+    });
+  },
+
+  async update(projetoId: string, atividadeId: string, atividade: Omit<ProjetoAtividade, 'id' | 'projeto_id' | 'data_cadastro' | 'data_atualizacao'>): Promise<ProjetoAtividade> {
+    return apiRequest<ProjetoAtividade>(`/projetos/${projetoId}/atividades/${atividadeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(atividade),
+    });
+  },
+
+  async delete(projetoId: string, atividadeId: string): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>(`/projetos/${projetoId}/atividades/${atividadeId}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Serviço de Reuniões do Projeto
+export const projetoReunioesService = {
+  async getAll(projetoId: string): Promise<ProjetoReuniao[]> {
+    return apiRequest<ProjetoReuniao[]>(`/projetos/${projetoId}/reunioes`);
+  },
+
+  async getById(projetoId: string, reuniaoId: string): Promise<ProjetoReuniao> {
+    return apiRequest<ProjetoReuniao>(`/projetos/${projetoId}/reunioes/${reuniaoId}`);
+  },
+
+  async create(projetoId: string, reuniao: Omit<ProjetoReuniao, 'id' | 'data_cadastro' | 'data_atualizacao'>): Promise<ProjetoReuniao> {
+    return apiRequest<ProjetoReuniao>(`/projetos/${projetoId}/reunioes`, {
+      method: 'POST',
+      body: JSON.stringify(reuniao),
+    });
+  },
+
+  async update(projetoId: string, reuniaoId: string, reuniao: Omit<ProjetoReuniao, 'id' | 'projeto_id' | 'data_cadastro' | 'data_atualizacao'>): Promise<ProjetoReuniao> {
+    return apiRequest<ProjetoReuniao>(`/projetos/${projetoId}/reunioes/${reuniaoId}`, {
+      method: 'PUT',
+      body: JSON.stringify(reuniao),
+    });
+  },
+
+  async delete(projetoId: string, reuniaoId: string): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>(`/projetos/${projetoId}/reunioes/${reuniaoId}`, {
       method: 'DELETE',
     });
   },

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Warehouse, TrendingUp, Menu, X, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Package, Warehouse, Menu, X, UserCircle, FolderKanban } from 'lucide-react';
 import { useState } from 'react';
 
 interface SidebarProps {
@@ -14,7 +14,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: 'people', label: 'Pessoas', icon: UserCircle },
     { id: 'materials', label: 'Materiais', icon: Package },
     { id: 'stock', label: 'Estoque', icon: Warehouse },
-    { id: 'movements', label: 'Movimentações', icon: TrendingUp },
+    { id: 'projetos', label: 'Projetos', icon: FolderKanban },
   ];
 
   return (
@@ -34,7 +34,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
         <div className="p-6 border-b border-sidebar-border">
           <h1 className="flex items-center gap-2 text-sidebar-foreground">
             <Package className="text-sidebar-primary" size={28} />
-            ERP Materiais
+            LARM Materiais
           </h1>
         </div>
 

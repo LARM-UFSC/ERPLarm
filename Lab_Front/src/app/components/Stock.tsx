@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Search, AlertTriangle, CheckCircle, Package } from 'lucide-react';
+import { materialConsumoService, MaterialConsumo } from '../../services/api';
 
 interface StockItem {
-  id: number;
+  id: string;
   code: string;
   name: string;
   category: string;
@@ -17,13 +18,73 @@ export function Stock() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'low' | 'ok'>('all');
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  useEffect(() => {
-    // Carregar dados do estoque da API quando disponível
-    // Por enquanto, estado vazio
-    setLoading(false);
-  }, []);
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) {
+      setStockItems([]);
+      setHasSearched(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setHasSearched(true);
+      const consumoData = await materialConsumoService.getAll();
+
+      // Mapear MaterialConsumo para StockItem
+      const stockData: StockItem[] = consumoData.map((material) => ({
+        id: material.id,
+        code: material.id.slice(0, 8).toUpperCase(),
+        name: material.descricao,
+        category: material.tipo,
+        stock: material.quantidade,
+        minStock: 5, // Estoque mínimo padrão
+        maxStock: Math.max(material.quantidade * 2, 10), // Estoque máximo dinâmico
+        location: 'LAB-01', // Localização padrão
+        lastUpdate: material.data_atualizacao || material.data_cadastro,
+      }));
+
+      setStockItems(stockData);
+    } catch (error) {
+      console.error('Erro ao carregar estoque:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const loadStockData = async () => {
+    try {
+      setLoading(true);
+      const consumoData = await materialConsumoService.getAll();
+
+      // Mapear MaterialConsumo para StockItem
+      const stockData: StockItem[] = consumoData.map((material) => ({
+        id: material.id,
+        code: material.id.slice(0, 8).toUpperCase(),
+        name: material.descricao,
+        category: material.tipo,
+        stock: material.quantidade,
+        minStock: 5, // Estoque mínimo padrão
+        maxStock: Math.max(material.quantidade * 2, 10), // Estoque máximo dinâmico
+        location: 'LAB-01', // Localização padrão
+        lastUpdate: material.data_atualizacao || material.data_cadastro,
+      }));
+
+      setStockItems(stockData);
+    } catch (error) {
+      console.error('Erro ao carregar estoque:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredItems = stockItems.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -87,15 +148,25 @@ export function Stock() {
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-        <div className="flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg">
-          <Search size={20} className="text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar material..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg flex-1">
+            <Search size={20} className="text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar material..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="flex-1 bg-transparent outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {loading ? 'Buscando...' : 'Buscar'}
+          </button>
         </div>
 
         <div className="flex gap-2">
@@ -132,6 +203,13 @@ export function Stock() {
         </div>
       </div>
 
+      {!hasSearched ? (
+        <div className="bg-card border border-border rounded-lg p-12 text-center">
+          <Package size={48} className="mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Faça uma busca para encontrar materiais</h3>
+          <p className="text-muted-foreground">Use o campo de busca acima para procurar materiais por nome, código ou categoria.</p>
+        </div>
+      ) : (
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -223,6 +301,7 @@ export function Stock() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

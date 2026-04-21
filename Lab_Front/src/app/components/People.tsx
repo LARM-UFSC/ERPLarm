@@ -9,11 +9,12 @@ export function People() {
   const [activeTab, setActiveTab] = useState<'alunos' | 'professores' | 'colaboradores'>('alunos');
   const [showModal, setShowModal] = useState(false);
   const [editingPerson, setEditingPerson] = useState<PersonType | null>(null);
-  
+
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -24,9 +25,55 @@ export function People() {
     email: '',
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) {
+      setAlunos([]);
+      setProfessores([]);
+      setColaboradores([]);
+      setHasSearched(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setHasSearched(true);
+
+      const [alunosData, professoresData, colaboradoresData] = await Promise.all([
+        alunosService.getAll(),
+        professoresService.getAll(),
+        colaboradoresService.getAll()
+      ]);
+
+      const term = searchTerm.toLowerCase();
+
+      const filteredAlunos = alunosData.filter(a =>
+        a.nome.toLowerCase().includes(term) ||
+        a.matricula.includes(term) ||
+        a.email?.toLowerCase().includes(term) ||
+        a.curso?.toLowerCase().includes(term)
+      );
+
+      const filteredProfessores = professoresData.filter(p =>
+        p.nome.toLowerCase().includes(term) ||
+        p.matricula.includes(term) ||
+        p.email?.toLowerCase().includes(term)
+      );
+
+      const filteredColaboradores = colaboradoresData.filter(c =>
+        c.nome.toLowerCase().includes(term) ||
+        c.cpf.includes(term) ||
+        c.email?.toLowerCase().includes(term)
+      );
+
+      setAlunos(filteredAlunos);
+      setProfessores(filteredProfessores);
+      setColaboradores(filteredColaboradores);
+    } catch (error) {
+      console.error('Erro ao buscar pessoas:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -63,20 +110,13 @@ export function People() {
     }
   };
 
-  const filteredPeople = getCurrentList().filter((person) => {
-    if (activeTab === 'colaboradores') {
-      const colaborador = person as Colaborador;
-      return colaborador.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             colaborador.cpf.includes(searchTerm) ||
-             colaborador.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    } else {
-      const pessoa = person as Aluno | Professor;
-      return pessoa.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             pessoa.matricula.includes(searchTerm) ||
-             pessoa.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             ('curso' in pessoa && pessoa.curso?.toLowerCase().includes(searchTerm.toLowerCase()));
+  const currentList = getCurrentList();
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
     }
-  });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -278,15 +318,25 @@ export function People() {
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4">
-        <div className="flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg">
-          <Search size={20} className="text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Buscar por nome, matrícula, CPF ou e-mail..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent outline-none"
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 px-4 py-2 bg-input-background rounded-lg">
+            <Search size={20} className="text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, matrícula, CPF ou e-mail..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="flex-1 bg-transparent outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {loading ? 'Buscando...' : 'Buscar'}
+          </button>
         </div>
       </div>
 
@@ -323,8 +373,25 @@ export function People() {
         </button>
       </div>
 
+      {!hasSearched ? (
+        <div className="bg-card border border-border rounded-lg p-12 text-center">
+          <User size={48} className="mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Faça uma busca para encontrar pessoas</h3>
+          <p className="text-muted-foreground">
+            Digite um nome, matrícula, CPF ou e-mail e clique em Buscar
+          </p>
+        </div>
+      ) : currentList.length === 0 ? (
+        <div className="bg-card border border-border rounded-lg p-12 text-center">
+          <Search size={48} className="mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Nenhuma pessoa encontrada</h3>
+          <p className="text-muted-foreground">
+            Tente buscar com outros termos
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filteredPeople.map((person) => (
+        {currentList.map((person: PersonType) => (
           <div key={person.id} className="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
@@ -388,6 +455,7 @@ export function People() {
           </div>
         ))}
       </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

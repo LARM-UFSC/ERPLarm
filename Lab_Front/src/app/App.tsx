@@ -4,7 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { People } from './components/People';
 import { Materials } from './components/Materials';
 import { Stock } from './components/Stock';
-import { Movements } from './components/Movements';
+import { Projetos } from './components/Projetos';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -19,8 +19,8 @@ export default function App() {
         return <Materials />;
       case 'stock':
         return <Stock />;
-      case 'movements':
-        return <Movements />;
+      case 'projetos':
+        return <Projetos />;
       default:
         return <Dashboard />;
     }
