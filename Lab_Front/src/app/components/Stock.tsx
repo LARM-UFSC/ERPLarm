@@ -223,7 +223,6 @@ export function Stock() {
                 <th className="text-right px-6 py-4">Est. Mínimo</th>
                 <th className="text-right px-6 py-4">Est. Máximo</th>
                 <th className="text-center px-6 py-4">Status</th>
-                <th className="text-left px-6 py-4">Última Atualização</th>
               </tr>
             </thead>
             <tbody>
@@ -280,15 +279,12 @@ export function Stock() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {new Date(item.lastUpdate).toLocaleDateString('pt-BR')}
-                    </td>
                   </tr>
                 );
               })}
               {filteredItems.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
                       <Package size={48} className="opacity-50" />
                       <p>Nenhum item no estoque</p>

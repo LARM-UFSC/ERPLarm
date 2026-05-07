@@ -1,0 +1,37 @@
+# Backend
+Lab_back/__pycache__/
+Lab_back/*.pyc
+Lab_back/.env
+Lab_back/.git
+Lab_back/.gitignore
+Lab_back/README.md
+Lab_back/Dockerfile
+Lab_back/.dockerignore
+
+# Frontend
+Lab_Front/node_modules/
+Lab_Front/.git
+Lab_Front/.gitignore
+Lab_Front/README.md
+Lab_Front/Dockerfile
+Lab_Front/.dockerignore
+Lab_Front/nginx.conf
+Lab_Front/dist/
+Lab_Front/.env.local
+Lab_Front/.env.development.local
+Lab_Front/.env.test.local
+Lab_Front/.env.production.local
+
+# Gerais
+.git/
+.gitignore
+README.md
+.env
+docker-compose.yml
+.docker-compose.yml
+.git
+.gitignore
+.vscode/
+.idea/
+*.log
+.DS_Store

@@ -1,12 +1,14 @@
-import { LayoutDashboard, Package, Warehouse, Menu, X, UserCircle, FolderKanban } from 'lucide-react';
+import { LayoutDashboard, Package, Warehouse, Menu, X, UserCircle, FolderKanban, Sun, Moon } from 'lucide-react';
 import { useState } from 'react';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  isDark: boolean;
+  toggleTheme: () => void;
 }
 
-export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
+export function Sidebar({ activeTab, setActiveTab, isDark, toggleTheme }: SidebarProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const menuItems = [
@@ -63,6 +65,17 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             })}
           </ul>
         </nav>
+
+        {/* Theme Toggle */}
+        <div className="p-4 mt-auto border-t border-sidebar-border">
+          <button
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
+            <span>{isDark ? 'Modo Claro' : 'Modo Escuro'}</span>
+          </button>
+        </div>
       </aside>
 
       {isMobileOpen && (

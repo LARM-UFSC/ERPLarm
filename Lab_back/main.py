@@ -21,9 +21,12 @@ app = FastAPI(
 )
 
 # Configuração CORS
+# Ler origens permitidas das variáveis de ambiente ou usar valores padrão
+allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:80").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Porta padrão do Vite
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,7 +93,7 @@ class Projeto(BaseModel):
 
 class ProjetoAtividade(BaseModel):
     id: Optional[str] = None
-    projeto_id: str
+    projeto_id: Optional[str] = None
     titulo: str
     descricao: Optional[str] = None
     status: str = 'backlog'
@@ -852,6 +855,7 @@ async def create_atividade(projeto_id: str, atividade: ProjetoAtividade):
         "INSERT INTO projeto_atividades (id, projeto_id, titulo, descricao, status, responsavel, data_conclusao, data_cadastro) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (atividade_id, projeto_id, atividade.titulo, atividade.descricao, atividade.status, atividade.responsavel, atividade.data_conclusao, data_cadastro)
     )
+    conn.commit()
 
     atividade.id = atividade_id
     atividade.projeto_id = projeto_id
@@ -902,6 +906,7 @@ async def update_atividade(projeto_id: str, atividade_id: str, atividade: Projet
         "UPDATE projeto_atividades SET titulo = %s, descricao = %s, status = %s, responsavel = %s, data_conclusao = %s, data_atualizacao = %s WHERE id = %s AND projeto_id = %s",
         (atividade.titulo, atividade.descricao, atividade.status, atividade.responsavel, atividade.data_conclusao, data_atualizacao, atividade_id, projeto_id)
     )
+    conn.commit()
 
     cursor.execute("SELECT * FROM projeto_atividades WHERE id = %s", (atividade_id,))
     updated_atividade = dict_from_row(cursor, cursor.fetchone())

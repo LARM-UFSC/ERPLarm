@@ -60,6 +60,8 @@
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
+  --input-background: oklch(0.205 0 0);
+  --switch-background: oklch(0.985 0 0);
   --ring: oklch(0.439 0 0);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -177,5 +179,26 @@
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+  }
+
+  /* Placeholder styling for dark mode */
+  ::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
+
+  ::-webkit-input-placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
+
+  ::-moz-placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
+
+  :-ms-input-placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
   }
 }

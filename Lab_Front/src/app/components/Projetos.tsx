@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, FolderOpen, Calendar, Users, X, Check, ChevronDown, Kanban } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, FolderOpen, Calendar, Users, X, Check, ChevronDown } from 'lucide-react';
 import {
   projetosService, Projeto,
   alunosService, professoresService, colaboradoresService,
   Aluno, Professor, Colaborador
 } from '../../services/api';
-import { ProjectBoard } from './ProjectBoard';
 
 type Pessoa =
   | (Aluno & { tipo: 'aluno' })
@@ -30,7 +29,12 @@ const STATUS_OPTIONS = [
   { value: 'cancelado', label: 'Cancelado', color: 'bg-red-100 text-red-700' },
 ];
 
-export function Projetos() {
+interface ProjetosProps {
+  onViewProject: (projeto: Projeto) => void;
+  onOpenProjectBoard: (projeto: Projeto) => void;
+}
+
+export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
@@ -39,7 +43,6 @@ export function Projetos() {
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<Projeto | null>(null);
 
   // Dropdown states
   const [showCoordenadorDropdown, setShowCoordenadorDropdown] = useState(false);
@@ -200,7 +203,8 @@ export function Projetos() {
     }
   };
 
-  const handleEdit = (projeto: Projeto) => {
+  const handleEdit = async (projeto: Projeto) => {
+    await loadPessoas();
     setEditingProjeto(projeto);
     setFormData({
       nome: projeto.nome,
@@ -236,6 +240,26 @@ export function Projetos() {
       data_inicio: '',
       data_previsao: '',
     });
+  };
+
+  const loadPessoas = async () => {
+    try {
+      const [alunosData, professoresData, colaboradoresData] = await Promise.all([
+        alunosService.getAll(),
+        professoresService.getAll(),
+        colaboradoresService.getAll(),
+      ]);
+
+      const pessoasFormatadas: Pessoa[] = [
+        ...alunosData.map((a) => ({ ...a, tipo: 'aluno' as const })),
+        ...professoresData.map((p) => ({ ...p, tipo: 'professor' as const })),
+        ...colaboradoresData.map((c) => ({ ...c, tipo: 'colaborador' as const })),
+      ];
+
+      setPessoas(pessoasFormatadas);
+    } catch (error) {
+      console.error('Erro ao carregar pessoas:', error);
+    }
   };
 
   const getStatusLabel = (status: string) => {
@@ -277,7 +301,8 @@ export function Projetos() {
           <p className="text-muted-foreground mt-1">Cadastro e acompanhamento de projetos</p>
         </div>
         <button
-          onClick={() => {
+          onClick={async () => {
+            await loadPessoas();
             setEditingProjeto(null);
             resetForm();
             setShowModal(true);
@@ -390,8 +415,11 @@ export function Projetos() {
                 return (
                   <tr key={projeto.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-6 py-4">
-                      <div>
-                        <p className="font-medium">{projeto.nome}</p>
+                      <div
+                        className="cursor-pointer hover:bg-muted/50 p-2 -m-2 rounded-lg transition-colors"
+                        onClick={() => onViewProject(projeto)}
+                      >
+                        <p className="font-medium hover:text-primary transition-colors">{projeto.nome}</p>
                         {projeto.descricao && (
                           <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{projeto.descricao}</p>
                         )}
@@ -430,13 +458,6 @@ export function Projetos() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => setSelectedProject(projeto)}
-                          className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
-                          title="Ver Andamento"
-                        >
-                          <Kanban size={18} />
-                        </button>
-                        <button
                           onClick={() => handleEdit(projeto)}
                           className="p-2 hover:bg-muted rounded-lg transition-colors"
                           title="Editar"
@@ -470,14 +491,6 @@ export function Projetos() {
           </table>
         </div>
       </div>
-      )}
-
-      {selectedProject && (
-        <ProjectBoard
-          projeto={selectedProject}
-          membros={[selectedProject.coordenador, ...(selectedProject.membros?.split(',').map(m => m.trim()).filter(Boolean) || [])]}
-          onClose={() => setSelectedProject(null)}
-        />
       )}
 
       {showModal && (

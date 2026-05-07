@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, GraduationCap, Briefcase } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, GraduationCap, Briefcase, Eye, FolderKanban } from 'lucide-react';
 import { alunosService, professoresService, colaboradoresService, Aluno, Professor, Colaborador } from "../../services/api";
 
 type PersonType = Aluno | Professor | Colaborador;
 
-export function People() {
+type PessoaWithTipo = (Aluno & { tipo: 'aluno' }) | (Professor & { tipo: 'professor' }) | (Colaborador & { tipo: 'colaborador' });
+
+interface PeopleProps {
+  onViewPerson: (pessoa: PessoaWithTipo) => void;
+}
+
+export function People({ onViewPerson }: PeopleProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'alunos' | 'professores' | 'colaboradores'>('alunos');
   const [showModal, setShowModal] = useState(false);
@@ -396,7 +402,15 @@ export function People() {
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <h3>{person.nome}</h3>
+                  <h3
+                    className="cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => {
+                      const tipo = activeTab === 'alunos' ? 'aluno' : activeTab === 'professores' ? 'professor' : 'colaborador';
+                      onViewPerson({ ...person, tipo } as PessoaWithTipo);
+                    }}
+                  >
+                    {person.nome}
+                  </h3>
                   <span className="px-2 py-1 bg-green-100 text-green-700 text-sm rounded">Ativo</span>
                 </div>
                 <p className="text-sm text-muted-foreground font-mono">
@@ -407,6 +421,16 @@ export function People() {
                 </p>
               </div>
               <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const tipo = activeTab === 'alunos' ? 'aluno' : activeTab === 'professores' ? 'professor' : 'colaborador';
+                    onViewPerson({ ...person, tipo } as PessoaWithTipo);
+                  }}
+                  className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
+                  title="Ver Detalhes"
+                >
+                  <Eye size={18} />
+                </button>
                 <button
                   onClick={() => handleEdit(person)}
                   className="p-2 hover:bg-muted rounded-lg transition-colors"

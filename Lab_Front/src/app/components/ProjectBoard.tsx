@@ -21,10 +21,10 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
-  { id: 'backlog', title: 'Backlog', color: 'bg-slate-100 border-slate-300' },
-  { id: 'todo', title: 'To Do', color: 'bg-blue-50 border-blue-300' },
-  { id: 'doing', title: 'Doing', color: 'bg-yellow-50 border-yellow-300' },
-  { id: 'done', title: 'Done', color: 'bg-green-50 border-green-300' },
+  { id: 'backlog', title: 'Backlog', color: 'bg-muted/50 border-border dark:bg-slate-800/50 dark:border-slate-600' },
+  { id: 'todo', title: 'To Do', color: 'bg-blue-500/10 border-blue-500/30 dark:bg-blue-900/30 dark:border-blue-500/50' },
+  { id: 'doing', title: 'Doing', color: 'bg-yellow-500/10 border-yellow-500/30 dark:bg-yellow-900/30 dark:border-yellow-500/50' },
+  { id: 'done', title: 'Done', color: 'bg-green-500/10 border-green-500/30 dark:bg-green-900/30 dark:border-green-500/50' },
 ];
 
 interface ProjectBoardProps {
@@ -596,7 +596,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                   type="text"
                   value={newTask.titulo}
                   onChange={(e) => setNewTask({ ...newTask, titulo: e.target.value })}
-                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg placeholder:text-muted-foreground"
                   placeholder="Nome da tarefa"
                   autoFocus
                 />
@@ -606,7 +606,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 <textarea
                   value={newTask.descricao}
                   onChange={(e) => setNewTask({ ...newTask, descricao: e.target.value })}
-                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none"
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none placeholder:text-muted-foreground"
                   rows={3}
                   placeholder="Descrição da tarefa"
                 />
@@ -760,7 +760,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                   type="text"
                   value={newReuniao.titulo}
                   onChange={(e) => setNewReuniao({ ...newReuniao, titulo: e.target.value })}
-                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg placeholder:text-muted-foreground"
                   placeholder="Ex: Reunião de Planejamento"
                   autoFocus
                 />
@@ -804,7 +804,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 <textarea
                   value={newReuniao.pauta}
                   onChange={(e) => setNewReuniao({ ...newReuniao, pauta: e.target.value })}
-                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none"
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none placeholder:text-muted-foreground"
                   rows={3}
                   placeholder="Temas que foram discutidos na reunião"
                 />
@@ -814,7 +814,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 <textarea
                   value={newReuniao.resumo}
                   onChange={(e) => setNewReuniao({ ...newReuniao, resumo: e.target.value })}
-                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none"
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none placeholder:text-muted-foreground"
                   rows={5}
                   placeholder="Resumo da reunião, decisões tomadas, próximos passos..."
                 />
