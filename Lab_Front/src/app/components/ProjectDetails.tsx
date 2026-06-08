@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Users, CheckCircle, FolderKanban, ClipboardList, User } from 'lucide-react';
-import { Projeto, ProjetoAtividade, ProjetoReuniao, projetoAtividadesService, projetoReunioesService } from '../../services/api';
+import { ArrowLeft, Calendar, Users, CheckCircle, FolderKanban, ClipboardList, User as UserIcon } from 'lucide-react';
+import { Projeto, ProjetoAtividade, ProjetoReuniao, projetoAtividadesService, projetoReunioesService, User } from '../../services/api';
 import { GanttChart } from './GanttChart';
 
 interface ProjectDetailsProps {
   projeto: Projeto;
   onBack: () => void;
   onOpenProjectBoard: () => void;
+  currentUser?: User | null;
 }
 
-export function ProjectDetails({ projeto, onBack, onOpenProjectBoard }: ProjectDetailsProps) {
+export function ProjectDetails({ projeto, onBack, onOpenProjectBoard, currentUser }: ProjectDetailsProps) {
   const [atividades, setAtividades] = useState<ProjetoAtividade[]>([]);
   const [reunioes, setReunioes] = useState<ProjetoReuniao[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,7 +194,7 @@ export function ProjectDetails({ projeto, onBack, onOpenProjectBoard }: ProjectD
             <div>
               <label className="text-sm text-muted-foreground">Coordenador</label>
               <div className="mt-1 flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
-                <User size={18} className="text-muted-foreground" />
+                <UserIcon size={18} className="text-muted-foreground" />
                 <span className="font-medium">{projeto.coordenador}</span>
               </div>
             </div>
@@ -204,7 +205,7 @@ export function ProjectDetails({ projeto, onBack, onOpenProjectBoard }: ProjectD
                 {membrosList.length > 0 ? (
                   membrosList.map((membro, index) => (
                     <div key={index} className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
-                      <User size={16} className="text-muted-foreground" />
+                      <UserIcon size={16} className="text-muted-foreground" />
                       <span>{membro}</span>
                     </div>
                   ))
@@ -254,7 +255,7 @@ export function ProjectDetails({ projeto, onBack, onOpenProjectBoard }: ProjectD
       <div className="bg-card border border-border rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Calendar className="w-5 h-5" />
-          Próximas Reuniões
+          Reuniões Recentes
         </h3>
 
         {loading ? (

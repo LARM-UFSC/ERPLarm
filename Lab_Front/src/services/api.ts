@@ -69,14 +69,18 @@ export interface Projeto {
   data_atualizacao?: string;
 }
 
+export type AtividadeTipo = 'tarefa' | 'reuniao';
+
 export interface ProjetoAtividade {
   id?: string;
   projeto_id: string;
   titulo: string;
   descricao?: string;
+  tipo?: AtividadeTipo;
   status: 'backlog' | 'todo' | 'doing' | 'done';
   responsavel?: string;
   data_conclusao?: string;
+  reuniao_id?: string;
   data_cadastro?: string;
   data_atualizacao?: string;
 }
@@ -84,6 +88,7 @@ export interface ProjetoAtividade {
 export interface ProjetoReuniao {
   id?: string;
   projeto_id: string;
+  atividade_id?: string;
   titulo: string;
   data_reuniao: string;
   participantes?: string;
@@ -102,21 +107,67 @@ export interface Stats {
   total_items_consumo: number;
 }
 
+// Tipos de Autenticação
+export interface UserLogin {
+  email: string;
+  password: string;
+}
+
+export interface UserRegister {
+  email: string;
+  password: string;
+  tipo_usuario: 'aluno' | 'professor' | 'colaborador';
+  nome: string;
+  matricula?: string;
+  curso?: string;
+  cpf?: string;
+  telefone?: string;
+}
+
+export interface Token {
+  access_token: string;
+  token_type: string;
+  user_type: string;
+  user_id: string;
+  nome: string;
+  perfil_id?: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  tipo_usuario: 'aluno' | 'professor' | 'colaborador';
+  perfil_id?: string;
+  nome?: string;
+}
+
 // Função helper para requisições
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // Obter token do localStorage se disponível
+  const token = getStoredToken();
+  
   const config: RequestInit = {
     headers: {
       'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` }),
       ...options.headers,
     },
     ...options,
   };
 
   try {
-    const response = await fetch(url, config);
-    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos timeout
+
+    const response = await fetch(url, {
+      ...config,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error('API Response Error:', {
@@ -125,14 +176,29 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
         url,
         errorData
       });
+
+      // Se for 401 Unauthorized, disparar evento para logout automático
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:logout'));
+      }
+
       throw new Error(errorData.detail || errorData.error || `HTTP ${response.status}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    return data;
   } catch (error) {
     console.error(`API Error (${endpoint}):`, error);
     console.error('Request details:', { url, config });
-    throw error;
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Tempo limite excedido. O servidor demorou muito para responder.');
+      }
+      throw error;
+    }
+    
+    throw new Error('Erro desconhecido ao fazer requisição');
   }
 }
 
@@ -396,4 +462,74 @@ export const healthService = {
   async check(): Promise<{ status: string; timestamp: string }> {
     return apiRequest<{ status: string; timestamp: string }>('/health');
   },
+};
+
+// Serviço de Autenticação
+export const authService = {
+  async login(credentials: UserLogin): Promise<Token> {
+    return apiRequest<Token>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
+  },
+
+  async register(userData: UserRegister): Promise<Token> {
+    return apiRequest<Token>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  async getMe(token: string): Promise<User> {
+    return apiRequest<User>('/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+  },
+};
+
+// Função para obter token armazenado
+export const getStoredToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
+};
+
+// Função para armazenar token
+export const storeToken = (token: string): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('token', token);
+  }
+};
+
+// Função para remover token
+export const removeToken = (): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('token');
+  }
+};
+
+// Função para obter usuário armazenado
+export const getStoredUser = (): User | null => {
+  if (typeof window !== 'undefined') {
+    const userStr = localStorage.getItem('user');
+    return userStr ? JSON.parse(userStr) : null;
+  }
+  return null;
+};
+
+// Função para armazenar usuário
+export const storeUser = (user: User): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('user', JSON.stringify(user));
+  }
+};
+
+// Função para remover usuário
+export const removeUser = (): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('user');
+  }
 };

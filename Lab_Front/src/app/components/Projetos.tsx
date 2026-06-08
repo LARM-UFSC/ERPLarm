@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Plus, Search, Edit, Trash2, FolderOpen, Calendar, Users, X, Check, ChevronDown } from 'lucide-react';
 import {
   projetosService, Projeto,
   alunosService, professoresService, colaboradoresService,
-  Aluno, Professor, Colaborador
+  Aluno, Professor, Colaborador, User
 } from '../../services/api';
+import { usePermissions } from '../../hooks/usePermissions';
 
 type Pessoa =
   | (Aluno & { tipo: 'aluno' })
@@ -32,9 +33,11 @@ const STATUS_OPTIONS = [
 interface ProjetosProps {
   onViewProject: (projeto: Projeto) => void;
   onOpenProjectBoard: (projeto: Projeto) => void;
+  currentUser?: User | null;
 }
 
-export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
+export function Projetos({ onViewProject, onOpenProjectBoard, currentUser }: ProjetosProps) {
+  const permissions = usePermissions(currentUser);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
@@ -87,8 +90,6 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
         colaboradoresService.getAll()
       ]);
 
-      setProjetos(projetosData);
-
       // Combinar todas as pessoas com seu tipo
       const todasPessoas: Pessoa[] = [
         ...alunosData.map(a => ({ ...a, tipo: 'aluno' as const })),
@@ -96,6 +97,25 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
         ...colaboradoresData.map(c => ({ ...c, tipo: 'colaborador' as const }))
       ];
       setPessoas(todasPessoas);
+
+      // Aplicar filtro localmente
+      const term = searchTerm.toLowerCase();
+      const filteredProjetosData = projetosData.filter((projeto) => {
+        const projetoNomeLower = projeto.nome.toLowerCase();
+        const matchesSearch = projetoNomeLower.includes(term);
+        const matchesStatus = statusFilter === 'all' || projeto.status === statusFilter;
+
+        // Filtrar projetos baseado nas permissões do usuário
+        let matchesPermissions = true;
+        if (!permissions.canViewAllProjects) {
+          const membros = projeto.membros ? projeto.membros.split(',').map(m => m.trim()).filter(Boolean) : [];
+          matchesPermissions = membros.includes(currentUser?.perfil_id || '') || membros.includes(currentUser?.nome || '');
+        }
+
+        return matchesSearch && matchesStatus && matchesPermissions;
+      });
+
+      setProjetos(filteredProjetosData);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
@@ -109,60 +129,29 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
     }
   };
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [projetosData, alunosData, professoresData, colaboradoresData] = await Promise.all([
-        projetosService.getAll(),
-        alunosService.getAll(),
-        professoresService.getAll(),
-        colaboradoresService.getAll()
-      ]);
+  const getPessoaByIdOrName = (idOrName: string) =>
+    pessoas.find((p) => p.id === idOrName || p.nome === idOrName);
 
-      setProjetos(projetosData);
-
-      // Combinar todas as pessoas com seu tipo
-      const todasPessoas: Pessoa[] = [
-        ...alunosData.map(a => ({ ...a, tipo: 'aluno' as const })),
-        ...professoresData.map(p => ({ ...p, tipo: 'professor' as const })),
-        ...colaboradoresData.map(c => ({ ...c, tipo: 'colaborador' as const }))
-      ];
-      setPessoas(todasPessoas);
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getPessoaDisplay = (nome: string) => {
-    const pessoa = pessoas.find(p => p.nome === nome);
-    if (!pessoa) return nome;
+  const getPessoaDisplay = (idOrName: string) => {
+    const pessoa = getPessoaByIdOrName(idOrName);
+    if (!pessoa) return idOrName;
     const tipoLabel = { aluno: 'Aluno', professor: 'Professor', colaborador: 'Colaborador' }[pessoa.tipo];
-    return `${nome} (${tipoLabel})`;
+    return `${pessoa.nome} (${tipoLabel})`;
   };
 
-  const filteredProjetos = projetos.filter((projeto) => {
-    const matchesSearch =
-      projeto.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      projeto.coordenador.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      projeto.descricao?.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredProjetos = projetos;
 
-    const matchesStatus = statusFilter === 'all' || projeto.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
-
-  const filteredPessoasCoordenador = pessoas.filter(p =>
-    p.nome.toLowerCase().includes(coordenadorSearch.toLowerCase()) ||
-    (p.tipo === 'aluno' && (p as Aluno).matricula.toLowerCase().includes(coordenadorSearch.toLowerCase())) ||
-    (p.tipo === 'professor' && (p as Professor).matricula.toLowerCase().includes(coordenadorSearch.toLowerCase())) ||
-    (p.tipo === 'colaborador' && (p as Colaborador).cpf.toLowerCase().includes(coordenadorSearch.toLowerCase()))
+  const filteredPessoasCoordenador = pessoas.filter(
+    (p) =>
+      p.tipo === 'professor' &&
+      (p.nome.toLowerCase().includes(coordenadorSearch.toLowerCase()) ||
+        (p as Professor).matricula.toLowerCase().includes(coordenadorSearch.toLowerCase()))
   );
 
-  const filteredPessoasMembros = pessoas.filter(p =>
-    p.nome.toLowerCase().includes(membrosSearch.toLowerCase()) &&
-    !formData.membros.split(',').map(m => m.trim()).filter(Boolean).includes(p.nome)
+  const filteredPessoasMembros = pessoas.filter(
+    (p) =>
+      p.nome.toLowerCase().includes(membrosSearch.toLowerCase()) &&
+      !formData.membros.split(',').map((m) => m.trim()).filter(Boolean).includes(p.id)
   );
 
   const membrosSelecionados = formData.membros.split(',').map(m => m.trim()).filter(Boolean);
@@ -193,7 +182,6 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
         await projetosService.create(projetoData);
       }
 
-      await loadData();
       setShowModal(false);
       setEditingProjeto(null);
       resetForm();
@@ -222,7 +210,6 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
     if (confirm('Deseja realmente excluir este projeto?')) {
       try {
         await projetosService.delete(id);
-        await loadData();
       } catch (error) {
         console.error('Erro ao excluir projeto:', error);
         alert('Erro ao excluir projeto.');
@@ -300,18 +287,20 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
           <h2>Gestão de Projetos</h2>
           <p className="text-muted-foreground mt-1">Cadastro e acompanhamento de projetos</p>
         </div>
-        <button
-          onClick={async () => {
-            await loadPessoas();
-            setEditingProjeto(null);
-            resetForm();
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-        >
-          <Plus size={20} />
-          Novo Projeto
-        </button>
+        {permissions.canManageProjects && (
+          <button
+            onClick={async () => {
+              await loadPessoas();
+              setEditingProjeto(null);
+              resetForm();
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus size={20} />
+            Novo Projeto
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -348,7 +337,7 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
             <Search size={20} className="text-muted-foreground" />
             <input
               type="text"
-              placeholder="Buscar por nome, coordenador ou descrição..."
+              placeholder="Buscar por nome do projeto..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={handleKeyPress}
@@ -433,7 +422,7 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
                         </span>
                         {projeto.membros && (
                           <span className="text-xs text-muted-foreground">
-                            +{projeto.membros.split(',').length} membros
+                            +{projeto.membros.split(',').filter((m) => m.trim()).length} membros
                           </span>
                         )}
                       </div>
@@ -456,22 +445,24 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleEdit(projeto)}
-                          className="p-2 hover:bg-muted rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(projeto.id)}
-                          className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      {permissions.canManageProjects && (
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleEdit(projeto)}
+                            className="p-2 hover:bg-muted rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit size={18} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(projeto.id)}
+                            className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -613,18 +604,18 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
 
                 {/* Membros selecionados */}
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {membrosSelecionados.map((nome) => {
-                    const pessoa = pessoas.find(p => p.nome === nome);
+                  {membrosSelecionados.map((membroId) => {
+                    const pessoa = getPessoaByIdOrName(membroId);
                     return (
                       <span
-                        key={nome}
+                        key={membroId}
                         className="inline-flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-full text-sm"
                       >
-                        {nome}
+                        {pessoa ? pessoa.nome : membroId}
                         <button
                           type="button"
                           onClick={() => {
-                            const novosMembros = membrosSelecionados.filter(m => m !== nome).join(', ');
+                            const novosMembros = membrosSelecionados.filter(m => m !== membroId).join(', ');
                             setFormData({ ...formData, membros: novosMembros });
                           }}
                           className="hover:text-destructive"
@@ -677,7 +668,7 @@ export function Projetos({ onViewProject, onOpenProjectBoard }: ProjetosProps) {
                               key={`${pessoa.tipo}-${pessoa.id}`}
                               type="button"
                               onClick={() => {
-                                const novosMembros = [...membrosSelecionados, pessoa.nome].join(', ');
+                                const novosMembros = [...membrosSelecionados, pessoa.id].join(', ');
                                 setFormData({ ...formData, membros: novosMembros });
                                 setMembrosSearch('');
                               }}

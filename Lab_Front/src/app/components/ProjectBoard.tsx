@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, GripVertical, ArrowLeft, Calendar, User, FileText, ClipboardList } from 'lucide-react';
-import { Projeto, ProjetoAtividade, ProjetoReuniao, projetoAtividadesService, projetoReunioesService } from '../../services/api';
+import {
+  Projeto,
+  AtividadeTipo,
+  User as AuthUser,
+  alunosService,
+  professoresService,
+  colaboradoresService,
+  projetoAtividadesService,
+  projetoReunioesService,
+} from '../../services/api';
+import { usePermissions, canEditActivity, canDeleteActivity } from '../../hooks/usePermissions';
 
 interface Task {
   id: string;
   titulo: string;
   descricao?: string;
+  tipo: AtividadeTipo;
   status: 'backlog' | 'todo' | 'doing' | 'done';
   responsavel?: string;
   data_conclusao?: string;
+  reuniao_id?: string;
   createdAt: string;
 }
 
@@ -31,6 +43,7 @@ interface ProjectBoardProps {
   projeto: Projeto;
   membros: string[];
   onClose: () => void;
+  currentUser?: AuthUser | null;
 }
 
 type TabType = 'atividades' | 'reunioes';
@@ -45,7 +58,9 @@ interface Reuniao {
   createdAt: string;
 }
 
-export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
+export function ProjectBoard({ projeto, membros: membrosProp, onClose, currentUser }: ProjectBoardProps) {
+  const permissions = usePermissions(currentUser);
+  const [membrosLista, setMembrosLista] = useState<string[]>(membrosProp);
   const [activeTab, setActiveTab] = useState<TabType>('atividades');
 
   // Estados para Atividades (Kanban)
@@ -60,10 +75,13 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
     responsavel: '',
     data_conclusao: '',
     status: 'backlog' as ColumnType,
+    tipo: 'tarefa' as AtividadeTipo,
   });
 
   // Estados para Reuniões
   const [reunioes, setReunioes] = useState<Reuniao[]>([]);
+  const [pendingReuniaoTask, setPendingReuniaoTask] = useState<Task | null>(null);
+  const [showRegisterReuniaoModal, setShowRegisterReuniaoModal] = useState(false);
   const [showAddReuniaoModal, setShowAddReuniaoModal] = useState(false);
   const [editingReuniao, setEditingReuniao] = useState<Reuniao | null>(null);
   const [loadingReunioes, setLoadingReunioes] = useState(true);
@@ -79,7 +97,29 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
   useEffect(() => {
     loadTasks();
     loadReunioes();
+    resolveMembrosNomes();
   }, [projeto.id]);
+
+  const resolveMembrosNomes = async () => {
+    try {
+      const [alunos, professores, colaboradores] = await Promise.all([
+        alunosService.getAll(),
+        professoresService.getAll(),
+        colaboradoresService.getAll(),
+      ]);
+      const pessoas = [
+        ...alunos.map((a) => ({ id: a.id, nome: a.nome })),
+        ...professores.map((p) => ({ id: p.id, nome: p.nome })),
+        ...colaboradores.map((c) => ({ id: c.id, nome: c.nome })),
+      ];
+      const ids = (projeto.membros || '').split(',').map((m) => m.trim()).filter(Boolean);
+      const nomesMembros = ids.map((id) => pessoas.find((p) => p.id === id || p.nome === id)?.nome || id);
+      const lista = [projeto.coordenador, ...nomesMembros].filter(Boolean);
+      setMembrosLista([...new Set(lista)]);
+    } catch {
+      setMembrosLista(membrosProp);
+    }
+  };
 
   const loadTasks = async () => {
     try {
@@ -89,9 +129,11 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
         id: a.id!,
         titulo: a.titulo,
         descricao: a.descricao,
+        tipo: a.tipo || 'tarefa',
         status: a.status,
         responsavel: a.responsavel,
         data_conclusao: a.data_conclusao,
+        reuniao_id: a.reuniao_id,
         createdAt: a.data_cadastro || new Date().toISOString(),
       }));
       setTasks(mappedTasks);
@@ -131,24 +173,92 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
     e.preventDefault();
   };
 
-  const handleDrop = (e: React.DragEvent, status: ColumnType) => {
+  const buildAtividadePayload = (task: Task, overrides: Partial<Task> = {}) => {
+    const merged = { ...task, ...overrides };
+    return {
+      titulo: merged.titulo,
+      descricao: merged.descricao,
+      tipo: merged.tipo,
+      status: merged.status,
+      responsavel: merged.responsavel,
+      data_conclusao: merged.data_conclusao,
+      reuniao_id: merged.reuniao_id,
+    };
+  };
+
+  const openRegisterReuniaoModal = (task: Task) => {
+    setPendingReuniaoTask(task);
+    setNewReuniao({
+      titulo: task.titulo,
+      data_reuniao: task.data_conclusao || new Date().toISOString().split('T')[0],
+      participantes: '',
+      pauta: task.descricao || '',
+      resumo: '',
+    });
+    setShowRegisterReuniaoModal(true);
+  };
+
+  const updateTaskStatus = async (task: Task, newStatus: ColumnType) => {
+    if (task.status === newStatus) return;
+
+    if (newStatus === 'done' && task.tipo === 'reuniao' && !task.reuniao_id) {
+      openRegisterReuniaoModal(task);
+      return;
+    }
+
+    const previousStatus = task.status;
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t))
+    );
+
+    try {
+      const updated = await projetoAtividadesService.update(
+        projeto.id,
+        task.id,
+        buildAtividadePayload(task, { status: newStatus })
+      );
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === task.id
+            ? {
+                ...t,
+                status: updated.status,
+                reuniao_id: updated.reuniao_id,
+                data_conclusao: updated.data_conclusao,
+              }
+            : t
+        )
+      );
+    } catch (error) {
+      console.error('Erro ao atualizar status da atividade:', error);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, status: previousStatus } : t))
+      );
+      alert('Erro ao mover atividade');
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent, status: ColumnType) => {
     e.preventDefault();
     if (draggedTask && draggedTask.status !== status) {
-      setTasks((prev) =>
-        prev.map((t) => (t.id === draggedTask.id ? { ...t, status } : t))
-      );
+      const task = draggedTask;
       setDraggedTask(null);
+      await updateTaskStatus(task, status);
     }
   };
 
   const handleAddTask = async () => {
     if (!newTask.titulo.trim()) return;
 
+    const initialStatus =
+      newTask.tipo === 'reuniao' && newTask.status === 'done' ? 'doing' : newTask.status;
+
     try {
       const atividade = await projetoAtividadesService.create(projeto.id, {
         titulo: newTask.titulo,
         descricao: newTask.descricao,
-        status: newTask.status,
+        tipo: newTask.tipo,
+        status: initialStatus,
         responsavel: newTask.responsavel || undefined,
         data_conclusao: newTask.data_conclusao || undefined,
       });
@@ -157,15 +267,21 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
         id: atividade.id!,
         titulo: atividade.titulo,
         descricao: atividade.descricao,
+        tipo: atividade.tipo || 'tarefa',
         status: atividade.status,
         responsavel: atividade.responsavel,
         data_conclusao: atividade.data_conclusao,
+        reuniao_id: atividade.reuniao_id,
         createdAt: atividade.data_cadastro || new Date().toISOString(),
       };
 
       setTasks((prev) => [...prev, task]);
-      setNewTask({ titulo: '', descricao: '', responsavel: '', data_conclusao: '', status: 'backlog' });
+      setNewTask({ titulo: '', descricao: '', responsavel: '', data_conclusao: '', status: 'backlog', tipo: 'tarefa' });
       setShowAddTaskModal(false);
+
+      if (newTask.tipo === 'reuniao' && newTask.status === 'done') {
+        openRegisterReuniaoModal(task);
+      }
     } catch (error) {
       console.error('Erro ao criar atividade:', error);
       alert('Erro ao criar atividade');
@@ -176,13 +292,11 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
     if (!editingTask || !editingTask.titulo.trim()) return;
 
     try {
-      await projetoAtividadesService.update(projeto.id, editingTask.id, {
-        titulo: editingTask.titulo,
-        descricao: editingTask.descricao,
-        status: editingTask.status,
-        responsavel: editingTask.responsavel,
-        data_conclusao: editingTask.data_conclusao,
-      });
+      await projetoAtividadesService.update(
+        projeto.id,
+        editingTask.id,
+        buildAtividadePayload(editingTask)
+      );
 
       setTasks((prev) =>
         prev.map((t) =>
@@ -191,6 +305,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 ...t,
                 titulo: editingTask.titulo,
                 descricao: editingTask.descricao,
+                tipo: editingTask.tipo,
                 responsavel: editingTask.responsavel,
                 data_conclusao: editingTask.data_conclusao,
               }
@@ -222,28 +337,64 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
 
   const moveTask = async (task: Task, direction: 'left' | 'right') => {
     const currentIndex = COLUMNS.findIndex((c) => c.id === task.status);
-    let newIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    const newIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
 
     if (newIndex >= 0 && newIndex < COLUMNS.length) {
-      const newStatus = COLUMNS[newIndex].id;
-      try {
-        await projetoAtividadesService.update(projeto.id, task.id, {
-          titulo: task.titulo,
-          descricao: task.descricao,
-          status: newStatus,
-          responsavel: task.responsavel,
-          data_conclusao: task.data_conclusao,
-        });
-        setTasks((prev) =>
-          prev.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t))
-        );
-      } catch (error) {
-        console.error('Erro ao mover atividade:', error);
-      }
+      await updateTaskStatus(task, COLUMNS[newIndex].id);
     }
   };
 
-  // Handlers para Reuniões
+  const handleRegisterReuniaoFromActivity = async () => {
+    if (!pendingReuniaoTask || !newReuniao.titulo.trim() || !newReuniao.data_reuniao) return;
+
+    try {
+      const reuniao = await projetoReunioesService.create(projeto.id, {
+        projeto_id: projeto.id,
+        atividade_id: pendingReuniaoTask.id,
+        titulo: newReuniao.titulo,
+        data_reuniao: newReuniao.data_reuniao,
+        participantes: newReuniao.participantes || undefined,
+        pauta: newReuniao.pauta || undefined,
+        resumo: newReuniao.resumo || undefined,
+      });
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === pendingReuniaoTask.id
+            ? {
+                ...t,
+                status: 'done',
+                reuniao_id: reuniao.id,
+                data_conclusao: newReuniao.data_reuniao,
+              }
+            : t
+        )
+      );
+
+      await loadReunioes();
+      setShowRegisterReuniaoModal(false);
+      setPendingReuniaoTask(null);
+      setNewReuniao({ titulo: '', data_reuniao: '', participantes: '', pauta: '', resumo: '' });
+    } catch (error) {
+      console.error('Erro ao registrar reunião:', error);
+      alert('Erro ao registrar reunião');
+    }
+  };
+
+  const handleCancelRegisterReuniao = () => {
+    setShowRegisterReuniaoModal(false);
+    setPendingReuniaoTask(null);
+    setNewReuniao({ titulo: '', data_reuniao: '', participantes: '', pauta: '', resumo: '' });
+  };
+
+  const openReuniaoAta = (task: Task) => {
+    const reuniao = reunioes.find((r) => r.id === task.reuniao_id);
+    if (reuniao) {
+      setEditingReuniao(reuniao);
+    }
+  };
+
+  // Handlers para Reuniões (visualização/edição de atas registradas)
   const handleAddReuniao = async () => {
     if (!newReuniao.titulo.trim() || !newReuniao.data_reuniao) return;
 
@@ -364,24 +515,24 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 }`}
               >
                 <FileText size={16} />
-                Reuniões
+                Atas Registradas
               </button>
             </div>
-            {activeTab === 'atividades' ? (
+            {activeTab === 'atividades' && permissions.canCreateActivity && (
               <button
-                onClick={() => setShowAddTaskModal(true)}
+                onClick={() => {
+                  if (permissions.isAluno) {
+                    setNewTask((prev) => ({
+                      ...prev,
+                      responsavel: permissions.userNome,
+                    }));
+                  }
+                  setShowAddTaskModal(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
               >
                 <Plus size={18} />
-                Nova Tarefa
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowAddReuniaoModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-              >
-                <Plus size={18} />
-                Nova Reunião
+                Nova Atividade
               </button>
             )}
             <button
@@ -429,7 +580,15 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                               className="text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
                             />
                             <div className="flex-1">
-                              <h4 className="font-medium text-sm">{task.titulo}</h4>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-sm">{task.titulo}</h4>
+                                {task.tipo === 'reuniao' && (
+                                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                                    <FileText size={10} />
+                                    Reunião
+                                  </span>
+                                )}
+                              </div>
                               {task.descricao && (
                                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                   {task.descricao}
@@ -475,18 +634,38 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                               )}
                             </div>
                             <div className="flex gap-1">
-                              <button
-                                onClick={() => setEditingTask(task)}
-                                className="p-1 hover:bg-muted rounded text-muted-foreground text-xs"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTask(task.id)}
-                                className="p-1 hover:bg-destructive/10 text-destructive rounded text-xs"
-                              >
-                                Excluir
-                              </button>
+                              {task.tipo === 'reuniao' && task.status === 'done' && task.reuniao_id && (
+                                <button
+                                  onClick={() => openReuniaoAta(task)}
+                                  className="p-1 hover:bg-muted rounded text-muted-foreground text-xs"
+                                >
+                                  Ver Ata
+                                </button>
+                              )}
+                              {task.tipo === 'reuniao' && !task.reuniao_id && (
+                                <button
+                                  onClick={() => openRegisterReuniaoModal(task)}
+                                  className="p-1 hover:bg-primary/10 text-primary rounded text-xs"
+                                >
+                                  Registrar
+                                </button>
+                              )}
+                              {canEditActivity(currentUser, task.responsavel) && (
+                                <button
+                                  onClick={() => setEditingTask(task)}
+                                  className="p-1 hover:bg-muted rounded text-muted-foreground text-xs"
+                                >
+                                  Editar
+                                </button>
+                              )}
+                              {canDeleteActivity(currentUser, task.responsavel) && (
+                                <button
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  className="p-1 hover:bg-destructive/10 text-destructive rounded text-xs"
+                                >
+                                  Excluir
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -494,18 +673,24 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                     </div>
 
                     {/* Add Task Button */}
-                    <div className="p-3">
-                      <button
-                        onClick={() => {
-                          setNewTask({ ...newTask, status: column.id });
-                          setShowAddTaskModal(true);
-                        }}
-                        className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-border rounded-lg hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
-                      >
-                        <Plus size={16} />
-                        Adicionar tarefa
-                      </button>
-                    </div>
+                    {permissions.canCreateActivity && (
+                      <div className="p-3">
+                        <button
+                          onClick={() => {
+                            setNewTask({
+                              ...newTask,
+                              status: column.id,
+                              responsavel: permissions.isAluno ? permissions.userNome : newTask.responsavel,
+                            });
+                            setShowAddTaskModal(true);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-border rounded-lg hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
+                        >
+                          <Plus size={16} />
+                          Adicionar atividade
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -517,7 +702,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <FileText size={48} className="mb-4 opacity-50" />
                   <p className="text-lg font-medium">Nenhuma reunião registrada</p>
-                  <p className="text-sm">Clique em "Nova Reunião" para adicionar</p>
+                  <p className="text-sm">Crie uma atividade do tipo Reunião no quadro e mova para Done para registrar a ata</p>
                 </div>
               ) : (
                 <div className="max-w-4xl mx-auto space-y-4">
@@ -559,20 +744,24 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                         </div>
                         
                         <div className="flex gap-2 ml-4">
-                          <button
-                            onClick={() => setEditingReuniao(reuniao)}
-                            className="p-2 hover:bg-muted rounded-lg transition-colors"
-                            title="Editar"
-                          >
-                            <span className="text-xs">Editar</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteReuniao(reuniao.id)}
-                            className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                            title="Excluir"
-                          >
-                            <span className="text-xs">Excluir</span>
-                          </button>
+                          {(permissions.isProfessor || permissions.isColaborador) && (
+                            <button
+                              onClick={() => setEditingReuniao(reuniao)}
+                              className="p-2 hover:bg-muted rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <span className="text-xs">Editar</span>
+                            </button>
+                          )}
+                          {permissions.isProfessor && (
+                            <button
+                              onClick={() => handleDeleteReuniao(reuniao.id)}
+                              className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <span className="text-xs">Excluir</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -588,8 +777,26 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
       {showAddTaskModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md">
-            <h3 className="mb-4">Nova Tarefa</h3>
+            <h3 className="mb-4">Nova Atividade</h3>
             <div className="space-y-4">
+              <div>
+                <label className="block mb-2 text-sm">Tipo *</label>
+                <select
+                  value={newTask.tipo}
+                  onChange={(e) => {
+                    const tipo = e.target.value as AtividadeTipo;
+                    setNewTask({
+                      ...newTask,
+                      tipo,
+                      status: tipo === 'reuniao' && newTask.status === 'done' ? 'doing' : newTask.status,
+                    });
+                  }}
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                >
+                  <option value="tarefa">Tarefa</option>
+                  <option value="reuniao">Reunião</option>
+                </select>
+              </div>
               <div>
                 <label className="block mb-2 text-sm">Título *</label>
                 <input
@@ -614,21 +821,32 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-2 text-sm">Responsável</label>
-                  <select
-                    value={newTask.responsavel}
-                    onChange={(e) => setNewTask({ ...newTask, responsavel: e.target.value })}
-                    className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
-                  >
-                    <option value="">Selecione...</option>
-                    {membros.map((membro) => (
-                      <option key={membro} value={membro}>
-                        {membro}
-                      </option>
-                    ))}
-                  </select>
+                  {permissions.isAluno ? (
+                    <input
+                      type="text"
+                      value={permissions.userNome}
+                      readOnly
+                      className="w-full px-4 py-2 bg-muted border border-border rounded-lg"
+                    />
+                  ) : (
+                    <select
+                      value={newTask.responsavel}
+                      onChange={(e) => setNewTask({ ...newTask, responsavel: e.target.value })}
+                      className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                    >
+                      <option value="">Selecione...</option>
+                      {membrosLista.map((membro) => (
+                        <option key={membro} value={membro}>
+                          {membro}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
-                  <label className="block mb-2 text-sm">Data de Conclusão</label>
+                  <label className="block mb-2 text-sm">
+                    {newTask.tipo === 'reuniao' ? 'Data Prevista' : 'Data de Conclusão'}
+                  </label>
                   <input
                     type="date"
                     value={newTask.data_conclusao}
@@ -644,12 +862,17 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                   onChange={(e) => setNewTask({ ...newTask, status: e.target.value as ColumnType })}
                   className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
                 >
-                  {COLUMNS.map((col) => (
+                  {COLUMNS.filter((col) => newTask.tipo === 'tarefa' || col.id !== 'done').map((col) => (
                     <option key={col.id} value={col.id}>
                       {col.title}
                     </option>
                   ))}
                 </select>
+                {newTask.tipo === 'reuniao' && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ao mover para Done, será aberto o registro da ata da reunião.
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-3 pt-4">
@@ -675,8 +898,13 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
       {editingTask && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md">
-            <h3 className="mb-4">Editar Tarefa</h3>
+            <h3 className="mb-4">Editar Atividade</h3>
             <div className="space-y-4">
+              {editingTask.tipo === 'reuniao' && (
+                <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                  Atividade do tipo Reunião. Ao concluir no quadro, registre a ata.
+                </p>
+              )}
               <div>
                 <label className="block mb-2 text-sm">Título</label>
                 <input
@@ -702,20 +930,30 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block mb-2 text-sm">Responsável</label>
-                  <select
-                    value={editingTask.responsavel || ''}
-                    onChange={(e) =>
-                      setEditingTask({ ...editingTask, responsavel: e.target.value || undefined })
-                    }
-                    className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
-                  >
-                    <option value="">Selecione...</option>
-                    {membros.map((membro) => (
-                      <option key={membro} value={membro}>
-                        {membro}
-                      </option>
-                    ))}
-                  </select>
+                  {permissions.isAluno ? (
+                    <input
+                      type="text"
+                      value={editingTask.responsavel || permissions.userNome}
+                      readOnly
+                      className="w-full px-4 py-2 bg-muted border border-border rounded-lg"
+                    />
+                  ) : (
+                    <select
+                      value={editingTask.responsavel || ''}
+                      onChange={(e) =>
+                        setEditingTask({ ...editingTask, responsavel: e.target.value || undefined })
+                      }
+                      className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                      disabled={!permissions.canAssignActivityToOthers}
+                    >
+                      <option value="">Selecione...</option>
+                      {membrosLista.map((membro) => (
+                        <option key={membro} value={membro}>
+                          {membro}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block mb-2 text-sm">Data de Conclusão</label>
@@ -742,6 +980,95 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
                 className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
               >
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Registrar Reunião (ao concluir atividade tipo reunião) */}
+      {showRegisterReuniaoModal && pendingReuniaoTask && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-card border border-border rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="mb-1">Registrar Reunião</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              A atividade &quot;{pendingReuniaoTask.titulo}&quot; foi concluída. Preencha a ata da reunião.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-2 text-sm">Título *</label>
+                <input
+                  type="text"
+                  value={newReuniao.titulo}
+                  onChange={(e) => setNewReuniao({ ...newReuniao, titulo: e.target.value })}
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block mb-2 text-sm">Data da Reunião *</label>
+                <input
+                  type="date"
+                  value={newReuniao.data_reuniao}
+                  onChange={(e) => setNewReuniao({ ...newReuniao, data_reuniao: e.target.value })}
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block mb-2 text-sm">Participantes</label>
+                <div className="max-h-32 overflow-y-auto bg-input-background border border-border rounded-lg p-3 space-y-2">
+                  {membrosLista.map((membro) => (
+                    <label key={membro} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newReuniao.participantes.split(',').map(p => p.trim()).filter(Boolean).includes(membro)}
+                        onChange={(e) => {
+                          const currentParticipants = newReuniao.participantes.split(',').map(p => p.trim()).filter(Boolean);
+                          const newParticipants = e.target.checked
+                            ? [...currentParticipants, membro]
+                            : currentParticipants.filter(p => p !== membro);
+                          setNewReuniao({ ...newReuniao, participantes: newParticipants.join(', ') });
+                        }}
+                        className="rounded border-border"
+                      />
+                      <span className="text-sm">{membro}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block mb-2 text-sm">Pauta</label>
+                <textarea
+                  value={newReuniao.pauta}
+                  onChange={(e) => setNewReuniao({ ...newReuniao, pauta: e.target.value })}
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none"
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block mb-2 text-sm">Resumo / Ata *</label>
+                <textarea
+                  value={newReuniao.resumo}
+                  onChange={(e) => setNewReuniao({ ...newReuniao, resumo: e.target.value })}
+                  className="w-full px-4 py-2 bg-input-background border border-border rounded-lg resize-none"
+                  rows={5}
+                  placeholder="Resumo da reunião, decisões tomadas, próximos passos..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={handleCancelRegisterReuniao}
+                className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRegisterReuniaoFromActivity}
+                disabled={!newReuniao.titulo.trim() || !newReuniao.data_reuniao || !newReuniao.resumo.trim()}
+                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                Concluir e Registrar
               </button>
             </div>
           </div>
@@ -777,7 +1104,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
               <div>
                 <label className="block mb-2 text-sm">Participantes</label>
                 <div className="max-h-32 overflow-y-auto bg-input-background border border-border rounded-lg p-3 space-y-2">
-                  {membros.map((membro) => (
+                  {membrosLista.map((membro) => (
                     <label key={membro} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -866,7 +1193,7 @@ export function ProjectBoard({ projeto, membros, onClose }: ProjectBoardProps) {
               <div>
                 <label className="block mb-2 text-sm">Participantes</label>
                 <div className="max-h-32 overflow-y-auto bg-input-background border border-border rounded-lg p-3 space-y-2">
-                  {membros.map((membro) => (
+                  {membrosLista.map((membro) => (
                     <label key={membro} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"

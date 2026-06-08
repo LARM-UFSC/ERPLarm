@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
-import { materialConsumoService, materialPermanenteService, MaterialConsumo, MaterialPermanente } from '../../services/api';
+import { materialConsumoService, materialPermanenteService, MaterialConsumo, MaterialPermanente, User } from '../../services/api';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface FormData {
   tipo: string;
@@ -12,7 +13,12 @@ interface FormData {
   marca: string;
 }
 
-export function Materials() {
+interface MaterialsProps {
+  currentUser?: User | null;
+}
+
+export function Materials({ currentUser }: MaterialsProps) {
+  const permissions = usePermissions(currentUser);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialConsumo | MaterialPermanente | null>(null);
@@ -221,18 +227,22 @@ export function Materials() {
           <h2>Gestão de Materiais</h2>
           <p className="text-muted-foreground mt-1">Cadastro e controle de materiais</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingMaterial(null);
-            setMaterialType('consumo');
-            resetForm();
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-        >
-          <Plus size={20} />
-          Novo Material
-        </button>
+        {permissions.canManageMaterials ? (
+          <button
+            onClick={() => {
+              setEditingMaterial(null);
+              setMaterialType('consumo');
+              resetForm();
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus size={20} />
+            Novo Material
+          </button>
+        ) : (
+          <p className="text-sm text-muted-foreground">Modo consulta</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -358,22 +368,24 @@ export function Materials() {
                         {material.quantidade_minima || '-'}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleEdit(material, 'consumo')}
-                            className="p-2 hover:bg-muted rounded-lg transition-colors"
-                            title="Editar"
-                          >
-                            <Edit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(material.id, 'consumo')}
-                            className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                        {permissions.canManageMaterials && (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleEdit(material, 'consumo')}
+                              className="p-2 hover:bg-muted rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Edit size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(material.id, 'consumo')}
+                              className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -418,22 +430,24 @@ export function Materials() {
                       <td className="px-6 py-4">{material.modelo || 'N/A'}</td>
                       <td className="px-6 py-4">{material.marca || 'N/A'}</td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleEdit(material, 'permanente')}
-                            className="p-2 hover:bg-muted rounded-lg transition-colors"
-                            title="Editar"
-                          >
-                            <Edit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(material.id, 'permanente')}
-                            className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                        {permissions.canManageMaterials && (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleEdit(material, 'permanente')}
+                              className="p-2 hover:bg-muted rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Edit size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(material.id, 'permanente')}
+                              className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -446,7 +460,7 @@ export function Materials() {
       </div>
       )}
 
-      {showModal && (
+      {showModal && permissions.canManageMaterials && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-border rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="mb-4">{editingMaterial ? 'Editar Material' : 'Novo Material'}</h3>

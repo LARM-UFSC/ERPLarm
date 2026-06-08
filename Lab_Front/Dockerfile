@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine AS build
+FROM node:18 AS build
 
 # Definir o diretório de trabalho
 WORKDIR /app
@@ -7,8 +7,8 @@ WORKDIR /app
 # Copiar package.json e package-lock.json
 COPY package.json package-lock.json ./
 
-# Instalar dependências
-RUN npm ci --only=production
+# Instalar todas as dependências (incluindo devDependencies para o build)
+RUN npm install
 
 # Copiar o código fonte
 COPY . .

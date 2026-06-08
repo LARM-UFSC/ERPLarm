@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, GraduationCap, Briefcase, Eye, FolderKanban } from 'lucide-react';
-import { alunosService, professoresService, colaboradoresService, Aluno, Professor, Colaborador } from "../../services/api";
+import { alunosService, professoresService, colaboradoresService, Aluno, Professor, Colaborador, User as AuthUser } from "../../services/api";
+import { usePermissions } from "../../hooks/usePermissions";
 
 type PersonType = Aluno | Professor | Colaborador;
 
@@ -8,9 +9,11 @@ type PessoaWithTipo = (Aluno & { tipo: 'aluno' }) | (Professor & { tipo: 'profes
 
 interface PeopleProps {
   onViewPerson: (pessoa: PessoaWithTipo) => void;
+  currentUser?: AuthUser | null;
 }
 
-export function People({ onViewPerson }: PeopleProps) {
+export function People({ onViewPerson, currentUser }: PeopleProps) {
+  const permissions = usePermissions(currentUser);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'alunos' | 'professores' | 'colaboradores'>('alunos');
   const [showModal, setShowModal] = useState(false);
@@ -272,17 +275,19 @@ export function People({ onViewPerson }: PeopleProps) {
           <h2>Gestão de Pessoas</h2>
           <p className="text-muted-foreground mt-1">Cadastro e controle de pessoas</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingPerson(null);
-            resetForm();
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-        >
-          <Plus size={20} />
-          Nova Pessoa
-        </button>
+        {permissions.canManagePeople && (
+          <button
+            onClick={() => {
+              setEditingPerson(null);
+              resetForm();
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus size={20} />
+            Nova Pessoa
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -431,20 +436,24 @@ export function People({ onViewPerson }: PeopleProps) {
                 >
                   <Eye size={18} />
                 </button>
-                <button
-                  onClick={() => handleEdit(person)}
-                  className="p-2 hover:bg-muted rounded-lg transition-colors"
-                  title="Editar"
-                >
-                  <Edit size={18} />
-                </button>
-                <button
-                  onClick={() => handleDelete(person.id)}
-                  className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                  title="Excluir"
-                >
-                  <Trash2 size={18} />
-                </button>
+                {permissions.canManagePeople && (
+                  <>
+                    <button
+                      onClick={() => handleEdit(person)}
+                      className="p-2 hover:bg-muted rounded-lg transition-colors"
+                      title="Editar"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(person.id)}
+                      className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -481,7 +490,7 @@ export function People({ onViewPerson }: PeopleProps) {
       </div>
       )}
 
-      {showModal && (
+      {showModal && permissions.canManagePeople && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-border rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <h3 className="mb-4">

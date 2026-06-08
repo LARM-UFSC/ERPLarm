@@ -46,7 +46,22 @@ export function Stock() {
         lastUpdate: material.data_atualizacao || material.data_cadastro,
       }));
 
-      setStockItems(stockData);
+      // Aplicar filtro localmente
+      const term = searchTerm.toLowerCase();
+      const filteredStockData = stockData.filter((item) => {
+        const matchesSearch = item.name.toLowerCase().includes(term) ||
+          item.code.toLowerCase().includes(term) ||
+          item.category.toLowerCase().includes(term);
+
+        if (filterStatus === 'low') {
+          return matchesSearch && item.stock <= item.minStock;
+        } else if (filterStatus === 'ok') {
+          return matchesSearch && item.stock > item.minStock;
+        }
+        return matchesSearch;
+      });
+
+      setStockItems(filteredStockData);
     } catch (error) {
       console.error('Erro ao carregar estoque:', error);
     } finally {
@@ -60,44 +75,7 @@ export function Stock() {
     }
   };
 
-  const loadStockData = async () => {
-    try {
-      setLoading(true);
-      const consumoData = await materialConsumoService.getAll();
-
-      // Mapear MaterialConsumo para StockItem
-      const stockData: StockItem[] = consumoData.map((material) => ({
-        id: material.id,
-        code: material.id.slice(0, 8).toUpperCase(),
-        name: material.descricao,
-        category: material.tipo,
-        stock: material.quantidade,
-        minStock: 5, // Estoque mínimo padrão
-        maxStock: Math.max(material.quantidade * 2, 10), // Estoque máximo dinâmico
-        location: 'LAB-01', // Localização padrão
-        lastUpdate: material.data_atualizacao || material.data_cadastro,
-      }));
-
-      setStockItems(stockData);
-    } catch (error) {
-      console.error('Erro ao carregar estoque:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredItems = stockItems.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase());
-
-    if (filterStatus === 'low') {
-      return matchesSearch && item.stock <= item.minStock;
-    } else if (filterStatus === 'ok') {
-      return matchesSearch && item.stock > item.minStock;
-    }
-    return matchesSearch;
-  });
+  const filteredItems = stockItems;
 
   const lowStockCount = stockItems.filter(item => item.stock <= item.minStock).length;
   const okStockCount = stockItems.filter(item => item.stock > item.minStock).length;
