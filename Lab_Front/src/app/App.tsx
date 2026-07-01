@@ -8,18 +8,20 @@ import { Projetos } from './components/Projetos';
 import { ProjectDetails } from './components/ProjectDetails';
 import { PersonDetails } from './components/PersonDetails';
 import { ProjectBoard } from './components/ProjectBoard';
+import { Profile } from './components/Profile';
 import { Login } from './components/Login';
 import { Register } from './components/Register';
 import { useTheme } from '../hooks/useTheme';
 import { Projeto, Aluno, Professor, Colaborador, User, authService, getStoredToken, getStoredUser, storeUser, removeToken, removeUser } from '../services/api';
 import { usePermissions } from '../hooks/usePermissions';
 
-type ViewType = 
+type ViewType =
   | { type: 'dashboard' }
   | { type: 'people' }
   | { type: 'materials' }
   | { type: 'stock' }
   | { type: 'projetos' }
+  | { type: 'profile' }
   | { type: 'project-details'; projeto: Projeto }
   | { type: 'person-details'; pessoa: (Aluno & { tipo: 'aluno' }) | (Professor & { tipo: 'professor' }) | (Colaborador & { tipo: 'colaborador' }) }
   | { type: 'project-board'; projeto: Projeto; returnTo: 'project-details' | 'projetos' };
@@ -107,6 +109,9 @@ export default function App() {
       case 'projetos':
         setCurrentView({ type: 'projetos' });
         break;
+      case 'profile':
+        setCurrentView({ type: 'profile' });
+        break;
     }
   };
 
@@ -150,7 +155,7 @@ export default function App() {
   const renderContent = () => {
     switch (currentView.type) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard currentUser={currentUser} />;
       case 'people':
         return permissions.canAccessPeople ? (
           <People onViewPerson={handleViewPerson} currentUser={currentUser} />
@@ -167,6 +172,13 @@ export default function App() {
             onViewProject={handleViewProject}
             onOpenProjectBoard={handleOpenProjectBoard}
             currentUser={currentUser}
+          />
+        );
+      case 'profile':
+        return (
+          <Profile
+            currentUser={currentUser}
+            onUpdateUser={(updatedUser) => setCurrentUser(updatedUser)}
           />
         );
       case 'project-details':

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, Warehouse, Menu, X, UserCircle, FolderKanban, Sun, Moon, LogOut } from 'lucide-react';
+import { LayoutDashboard, Package, Warehouse, Menu, X, UserCircle, FolderKanban, Sun, Moon, LogOut, User as UserIcon } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { User } from '../../services/api';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -20,19 +20,21 @@ export function Sidebar({ activeTab, setActiveTab, isDark, toggleTheme, onLogout
   const menuItems = useMemo(() => {
     const items = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      ...(permissions.canAccessPeople
-        ? [{ id: 'people', label: 'Pessoas', icon: UserCircle }]
+      // Apenas administrador pode ver Pessoas, Materiais e Estoque
+      ...(permissions.isAdministrador
+        ? [
+            { id: 'people', label: 'Pessoas', icon: UserCircle },
+            { id: 'materials', label: 'Materiais', icon: Package },
+            { id: 'stock', label: 'Estoque', icon: Warehouse },
+          ]
         : []),
-      ...(permissions.canViewMaterials
-        ? [{ id: 'materials', label: 'Materiais', icon: Package }]
-        : []),
-      ...(permissions.canViewStock
-        ? [{ id: 'stock', label: 'Estoque', icon: Warehouse }]
-        : []),
+      // Todos podem ver Projetos
       { id: 'projetos', label: 'Projetos', icon: FolderKanban },
+      // Todos podem ver Perfil - usar foto de perfil se disponível
+      { id: 'profile', label: 'Perfil', icon: UserIcon, isProfile: true },
     ];
     return items;
-  }, [permissions.canAccessPeople, permissions.canViewMaterials, permissions.canViewStock]);
+  }, [permissions.isAdministrador]);
 
   return (
     <>
@@ -73,7 +75,15 @@ export function Sidebar({ activeTab, setActiveTab, isDark, toggleTheme, onLogout
                         : 'text-sidebar-foreground hover:bg-sidebar-accent'
                     } ${!isAuthenticated ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <Icon size={20} />
+                    {item.isProfile && currentUser?.foto_perfil ? (
+                      <img
+                        src={`http://localhost:8000${currentUser.foto_perfil}`}
+                        alt="Foto de perfil"
+                        className="w-5 h-5 rounded-full object-cover border-2 border-green-500"
+                      />
+                    ) : (
+                      <Icon size={20} />
+                    )}
                     <span>{item.label}</span>
                   </button>
                 </li>
@@ -96,14 +106,30 @@ export function Sidebar({ activeTab, setActiveTab, isDark, toggleTheme, onLogout
         {/* User Info & Logout */}
         {isAuthenticated && currentUser && (
           <div className="p-4 border-t border-sidebar-border">
-            <div className="mb-3 px-4">
-              <p className="text-sm font-medium text-sidebar-foreground">
-                {currentUser.email}
-              </p>
-              <p className="text-xs text-sidebar-foreground/60 capitalize">
-                {currentUser.nome ? `${currentUser.nome} · ` : ''}
-                {currentUser.tipo_usuario}
-              </p>
+            <div className="mb-3 px-4 flex items-center gap-3">
+              <div className="relative">
+                {currentUser.foto_perfil ? (
+                  <img
+                    src={`http://localhost:8000${currentUser.foto_perfil}`}
+                    alt="Foto de perfil"
+                    className="w-10 h-10 rounded-full object-cover border-2 border-green-500"
+                  />
+                ) : (
+                  <UserCircle size={40} className="text-green-500" strokeWidth={2} />
+                )}
+                <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-sidebar"></div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-sidebar-foreground truncate">
+                  {currentUser.email}
+                </p>
+                <p className="text-xs text-sidebar-foreground/80">
+                  {currentUser.nome ? currentUser.nome.split(' ')[0] : ''}
+                </p>
+                <p className="text-xs text-green-600 dark:text-green-400 capitalize font-medium">
+                  {currentUser.tipo_usuario}
+                </p>
+              </div>
             </div>
             {onLogout && (
               <button

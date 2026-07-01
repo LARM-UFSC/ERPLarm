@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, GraduationCap, Briefcase, Eye, FolderKanban } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, User, Phone, Mail, MapPin, BookOpen, GraduationCap, Briefcase, Eye, FolderKanban, UserCircle } from 'lucide-react';
 import { alunosService, professoresService, colaboradoresService, Aluno, Professor, Colaborador, User as AuthUser } from "../../services/api";
 import { usePermissions } from "../../hooks/usePermissions";
 
@@ -386,7 +386,15 @@ export function People({ onViewPerson, currentUser }: PeopleProps) {
 
       {!hasSearched ? (
         <div className="bg-card border border-border rounded-lg p-12 text-center">
-          <User size={48} className="mx-auto text-muted-foreground mb-4" />
+          {currentUser?.foto_perfil ? (
+            <img
+              src={`http://localhost:8000${currentUser.foto_perfil}`}
+              alt="Foto de perfil"
+              className="w-16 h-16 rounded-full object-cover border-2 border-green-500 mx-auto mb-4"
+            />
+          ) : (
+            <UserCircle size={64} className="mx-auto text-green-500 mb-4" strokeWidth={1.5} />
+          )}
           <h3 className="text-lg font-medium mb-2">Faça uma busca para encontrar pessoas</h3>
           <p className="text-muted-foreground">
             Digite um nome, matrícula, CPF ou e-mail e clique em Buscar
@@ -401,92 +409,103 @@ export function People({ onViewPerson, currentUser }: PeopleProps) {
           </p>
         </div>
       ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {currentList.map((person: PersonType) => (
-          <div key={person.id} className="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <h3
-                    className="cursor-pointer hover:text-primary transition-colors"
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {currentList.map((person: PersonType) => (
+            <div key={person.id} className="bg-card border border-border rounded-lg p-6 hover:shadow-lg transition-shadow">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-4 flex-1">
+                  {(person as any).foto_perfil ? (
+                    <img
+                      src={`http://localhost:8000${(person as any).foto_perfil}`}
+                      alt={`Foto de ${person.nome}`}
+                      className="w-12 h-12 rounded-full object-cover border-2 border-green-500"
+                    />
+                  ) : (
+                    <UserCircle size={48} className="text-green-500" strokeWidth={1.5} />
+                  )}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <h3
+                        className="cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => {
+                          const tipo = activeTab === 'alunos' ? 'aluno' : activeTab === 'professores' ? 'professor' : 'colaborador';
+                          onViewPerson({ ...person, tipo } as PessoaWithTipo);
+                        }}
+                      >
+                        {person.nome}
+                      </h3>
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-sm rounded">Ativo</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground font-mono">
+                      {activeTab === 'colaboradores'
+                        ? (person as Colaborador).cpf
+                        : (person as Aluno | Professor).matricula
+                      }
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
                     onClick={() => {
                       const tipo = activeTab === 'alunos' ? 'aluno' : activeTab === 'professores' ? 'professor' : 'colaborador';
                       onViewPerson({ ...person, tipo } as PessoaWithTipo);
                     }}
+                    className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
+                    title="Ver Detalhes"
                   >
-                    {person.nome}
-                  </h3>
-                  <span className="px-2 py-1 bg-green-100 text-green-700 text-sm rounded">Ativo</span>
+                    <Eye size={18} />
+                  </button>
+                  {permissions.canManagePeople && (
+                    <>
+                      <button
+                        onClick={() => handleEdit(person)}
+                        className="p-2 hover:bg-muted rounded-lg transition-colors"
+                        title="Editar"
+                      >
+                        <Edit size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(person.id)}
+                        className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground font-mono">
-                  {activeTab === 'colaboradores' 
-                    ? (person as Colaborador).cpf
-                    : (person as Aluno | Professor).matricula
-                  }
-                </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const tipo = activeTab === 'alunos' ? 'aluno' : activeTab === 'professores' ? 'professor' : 'colaborador';
-                    onViewPerson({ ...person, tipo } as PessoaWithTipo);
-                  }}
-                  className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-colors"
-                  title="Ver Detalhes"
-                >
-                  <Eye size={18} />
-                </button>
-                {permissions.canManagePeople && (
-                  <>
-                    <button
-                      onClick={() => handleEdit(person)}
-                      className="p-2 hover:bg-muted rounded-lg transition-colors"
-                      title="Editar"
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(person.id)}
-                      className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                      title="Excluir"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </>
-                )}
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded ${
+                    activeTab === 'alunos' 
+                      ? 'bg-blue-100 text-blue-700' 
+                      : activeTab === 'professores'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    {activeTab === 'alunos' && <BookOpen size={14} />}
+                    {activeTab === 'professores' && <GraduationCap size={14} />}
+                    {activeTab === 'colaboradores' && <Briefcase size={14} />}
+                    {activeTab === 'alunos' && (person as Aluno).curso}
+                    {activeTab === 'professores' && 'Professor'}
+                    {activeTab === 'colaboradores' && 'Colaborador'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Phone size={16} />
+                  <span>{person.telefone || 'Não informado'}</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Mail size={16} />
+                  <span>{person.email || 'Não informado'}</span>
+                </div>
               </div>
             </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className={`inline-flex items-center gap-1 px-3 py-1 rounded ${
-                  activeTab === 'alunos' 
-                    ? 'bg-blue-100 text-blue-700' 
-                    : activeTab === 'professores'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-purple-100 text-purple-700'
-                }`}>
-                  {activeTab === 'alunos' && <BookOpen size={14} />}
-                  {activeTab === 'professores' && <GraduationCap size={14} />}
-                  {activeTab === 'colaboradores' && <Briefcase size={14} />}
-                  {activeTab === 'alunos' && (person as Aluno).curso}
-                  {activeTab === 'professores' && 'Professor'}
-                  {activeTab === 'colaboradores' && 'Colaborador'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Phone size={16} />
-                <span>{person.telefone || 'Não informado'}</span>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Mail size={16} />
-                <span>{person.email || 'Não informado'}</span>
-              </div>
-            </div>
-          </div>
-        ))}
+          ))}
       </div>
       )}
 

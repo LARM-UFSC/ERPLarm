@@ -1,6 +1,6 @@
 import { User } from '../services/api';
 
-export type UserRole = 'aluno' | 'professor' | 'colaborador';
+export type UserRole = 'aluno' | 'professor' | 'colaborador' | 'administrador';
 
 export function getRole(user: User | null | undefined): UserRole | null {
   if (!user?.tipo_usuario) return null;
@@ -15,44 +15,75 @@ export function usePermissions(user: User | null | undefined) {
     isAluno: role === 'aluno',
     isProfessor: role === 'professor',
     isColaborador: role === 'colaborador',
+    isAdministrador: role === 'administrador',
     userNome: user?.nome || '',
 
-    canAccessPeople: role === 'professor',
-    canManagePeople: role === 'professor',
+    // Acesso a pessoas: apenas administrador
+    canAccessPeople: role === 'administrador',
+    canManagePeople: role === 'administrador',
+
+    // Materiais: apenas administrador pode gerenciar
     canViewMaterials: !!role,
-    canManageMaterials: role === 'professor' || role === 'colaborador',
+    canManageMaterials: role === 'administrador',
     canViewStock: !!role,
-    canManageProjects: role === 'professor',
-    canViewAllProjects: role === 'professor' || role === 'colaborador',
-    canCreateActivity: role === 'professor' || role === 'aluno' || role === 'colaborador',
-    canAssignActivityToOthers: role === 'professor' || role === 'colaborador',
+
+    // Projetos: administrador pode tudo, professor/colaborador podem criar/editar mas não deletar
+    canManageProjects: role === 'administrador' || role === 'professor' || role === 'colaborador',
+    canDeleteProjects: role === 'administrador',
+    canViewAllProjects: role === 'administrador',
+
+    // Atividades: aluno pode criar/editar as suas, professor/colaborador podem gerenciar se forem coordenadores
+    canCreateActivity: !!role,
+    canAssignActivityToOthers: role === 'administrador',
   };
 }
 
 export function canEditActivity(
   user: User | null | undefined,
-  responsavel?: string
+  responsavel?: string,
+  isCoordenador?: boolean
 ): boolean {
   const role = getRole(user);
   if (!role) return false;
-  if (role === 'professor' || role === 'colaborador') return true;
+
+  // Administrador pode editar qualquer atividade
+  if (role === 'administrador') return true;
+
+  // Professor/colaborador só podem editar se forem coordenadores
+  if (role === 'professor' || role === 'colaborador') {
+    return isCoordenador === true;
+  }
+
+  // Aluno só pode editar se for o responsável
   if (role === 'aluno') {
     const nome = user?.nome || '';
     return !responsavel || responsavel.trim() === nome;
   }
+
   return false;
 }
 
 export function canDeleteActivity(
   user: User | null | undefined,
-  responsavel?: string
+  responsavel?: string,
+  isCoordenador?: boolean
 ): boolean {
   const role = getRole(user);
   if (!role) return false;
-  if (role === 'professor') return true;
+
+  // Administrador pode deletar qualquer atividade
+  if (role === 'administrador') return true;
+
+  // Professor/colaborador só podem deletar se forem coordenadores
+  if (role === 'professor' || role === 'colaborador') {
+    return isCoordenador === true;
+  }
+
+  // Aluno só pode deletar se for o responsável
   if (role === 'aluno') {
     const nome = user?.nome || '';
     return !!responsavel && responsavel.trim() === nome;
   }
+
   return false;
 }

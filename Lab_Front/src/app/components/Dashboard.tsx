@@ -2,26 +2,32 @@ import { useState, useEffect } from 'react';
 import {
   Package, Users, BookOpen, GraduationCap, Briefcase, FolderKanban,
   TrendingUp, TrendingDown, BarChart3, PieChart, Activity, ArrowUpRight,
-  ArrowDownRight, Calendar, Layers, FileText
+  ArrowDownRight, Calendar, Layers, FileText, CheckCircle2, Clock, AlertCircle
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, LineChart, Line, AreaChart, Area,
   Legend
 } from 'recharts';
-import { statsService, materialConsumoService, projetosService, Stats, MaterialConsumo, Projeto } from "../../services/api";
+import { statsService, materialConsumoService, projetosService, Stats, MaterialConsumo, Projeto, User } from "../../services/api";
+import { usePermissions } from '../../hooks/usePermissions';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
-export function Dashboard() {
+interface DashboardProps {
+  currentUser?: User | null;
+}
+
+export function Dashboard({ currentUser }: DashboardProps) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [materiais, setMateriais] = useState<MaterialConsumo[]>([]);
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [loading, setLoading] = useState(true);
+  const permissions = usePermissions(currentUser);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentUser]);
 
   const loadData = async () => {
     try {
@@ -105,6 +111,17 @@ export function Dashboard() {
     );
   }
 
+  // Dashboard para Aluno
+  if (permissions.isAluno) {
+    return <StudentDashboard projetos={projetos} currentUser={currentUser || null} />;
+  }
+
+  // Dashboard para Colaborador e Professor
+  if (permissions.isColaborador || permissions.isProfessor) {
+    return <CollaboratorDashboard projetos={projetos} currentUser={currentUser || null} />;
+  }
+
+  // Dashboard para Administrador (visão completa)
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -325,6 +342,230 @@ export function Dashboard() {
           icon={Briefcase}
           color="purple"
         />
+      </div>
+    </div>
+  );
+}
+
+// Dashboard para Aluno
+function StudentDashboard({ projetos, currentUser }: { projetos: Projeto[]; currentUser: User | null }) {
+  const userNome = currentUser?.nome || '';
+
+  // Filtrar projetos onde o aluno é membro
+  const meusProjetos = projetos.filter(projeto => {
+    const membros = projeto.membros?.split(',').map(m => m.trim()) || [];
+    return membros.includes(userNome);
+  });
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2>Dashboard</h2>
+        <p className="text-muted-foreground mt-1">Minhas atividades e projetos</p>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-50 rounded-xl">
+              <FolderKanban className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Meus Projetos</p>
+              <p className="text-2xl font-bold">{meusProjetos.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-green-50 rounded-xl">
+              <CheckCircle2 className="text-green-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Projetos Ativos</p>
+              <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'em_andamento').length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-purple-50 rounded-xl">
+              <Activity className="text-purple-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Projetos Concluídos</p>
+              <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'concluido').length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de Projetos */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-4">Meus Projetos</h3>
+        {meusProjetos.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">Você não está em nenhum projeto ainda.</p>
+        ) : (
+          <div className="space-y-4">
+            {meusProjetos.map(projeto => (
+              <div key={projeto.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">{projeto.nome}</h4>
+                    <p className="text-sm text-muted-foreground">{projeto.descricao}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        projeto.status === 'em_andamento' ? 'bg-green-100 text-green-700' :
+                        projeto.status === 'concluido' ? 'bg-blue-100 text-blue-700' :
+                        projeto.status === 'pausado' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {projeto.status.replace('_', ' ')}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Coordenador: {projeto.coordenador}
+                      </span>
+                    </div>
+                  </div>
+                  <FolderKanban className="text-muted-foreground" size={20} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Dashboard para Colaborador e Professor
+function CollaboratorDashboard({ projetos, currentUser }: { projetos: Projeto[]; currentUser: User | null }) {
+  const userNome = currentUser?.nome || '';
+
+  // Filtrar projetos onde o usuário é coordenador ou membro
+  const meusProjetos = projetos.filter(projeto => {
+    const membros = projeto.membros?.split(',').map(m => m.trim()) || [];
+    return projeto.coordenador === userNome || membros.includes(userNome);
+  });
+
+  const projetosCoordenador = meusProjetos.filter(p => p.coordenador === userNome);
+  const projetosMembro = meusProjetos.filter(p => p.coordenador !== userNome);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2>Dashboard</h2>
+        <p className="text-muted-foreground mt-1">Visão dos meus projetos</p>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-50 rounded-xl">
+              <FolderKanban className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Total de Projetos</p>
+              <p className="text-2xl font-bold">{meusProjetos.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-green-50 rounded-xl">
+              <CheckCircle2 className="text-green-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Como Coordenador</p>
+              <p className="text-2xl font-bold">{projetosCoordenador.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-purple-50 rounded-xl">
+              <Activity className="text-purple-600" size={24} />
+            </div>
+            <div>
+              <p className="text-muted-foreground text-sm">Como Membro</p>
+              <p className="text-2xl font-bold">{projetosMembro.length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Status dos Projetos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock className="text-blue-600" size={16} />
+            <p className="text-sm text-muted-foreground">Planejamento</p>
+          </div>
+          <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'planejamento').length}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="text-green-600" size={16} />
+            <p className="text-sm text-muted-foreground">Em Andamento</p>
+          </div>
+          <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'em_andamento').length}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="text-yellow-600" size={16} />
+            <p className="text-sm text-muted-foreground">Pausado</p>
+          </div>
+          <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'pausado').length}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle2 className="text-blue-600" size={16} />
+            <p className="text-sm text-muted-foreground">Concluído</p>
+          </div>
+          <p className="text-2xl font-bold">{meusProjetos.filter(p => p.status === 'concluido').length}</p>
+        </div>
+      </div>
+
+      {/* Lista de Projetos */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="font-semibold mb-4">Meus Projetos</h3>
+        {meusProjetos.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">Você não está em nenhum projeto ainda.</p>
+        ) : (
+          <div className="space-y-4">
+            {meusProjetos.map(projeto => (
+              <div key={projeto.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-medium">{projeto.nome}</h4>
+                      {projeto.coordenador === userNome && (
+                        <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full">Coordenador</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{projeto.descricao}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        projeto.status === 'em_andamento' ? 'bg-green-100 text-green-700' :
+                        projeto.status === 'concluido' ? 'bg-blue-100 text-blue-700' :
+                        projeto.status === 'pausado' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {projeto.status.replace('_', ' ')}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {projeto.membros?.split(',').length || 0} membros
+                      </span>
+                    </div>
+                  </div>
+                  <FolderKanban className="text-muted-foreground" size={20} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

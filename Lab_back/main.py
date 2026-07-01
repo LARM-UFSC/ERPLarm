@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import psycopg2
@@ -53,6 +54,7 @@ class Aluno(BaseModel):
     curso: str
     telefone: Optional[str] = None
     email: Optional[str] = None
+    foto_perfil: Optional[str] = None
     data_cadastro: Optional[datetime] = None
 
 class Professor(BaseModel):
@@ -61,6 +63,7 @@ class Professor(BaseModel):
     matricula: str
     telefone: Optional[str] = None
     email: Optional[str] = None
+    foto_perfil: Optional[str] = None
     data_cadastro: Optional[datetime] = None
 
 class Colaborador(BaseModel):
@@ -69,6 +72,16 @@ class Colaborador(BaseModel):
     cpf: str
     telefone: Optional[str] = None
     email: Optional[str] = None
+    foto_perfil: Optional[str] = None
+    data_cadastro: Optional[datetime] = None
+
+class Administrador(BaseModel):
+    id: Optional[str] = None
+    nome: str
+    cpf: str
+    telefone: Optional[str] = None
+    email: Optional[str] = None
+    foto_perfil: Optional[str] = None
     data_cadastro: Optional[datetime] = None
 
 class MaterialConsumo(BaseModel):
@@ -134,11 +147,11 @@ class UserLogin(BaseModel):
 class UserRegister(BaseModel):
     email: str
     password: str
-    tipo_usuario: str  # 'aluno', 'professor', 'colaborador'
+    tipo_usuario: str  # 'aluno', 'professor', 'colaborador', 'administrador'
     nome: str
     matricula: Optional[str] = None  # para aluno e professor
     curso: Optional[str] = None  # para aluno
-    cpf: Optional[str] = None  # para colaborador
+    cpf: Optional[str] = None  # para colaborador e administrador
     telefone: Optional[str] = None
 
 class Token(BaseModel):
@@ -159,6 +172,7 @@ class User(BaseModel):
     tipo_usuario: str
     perfil_id: Optional[str] = None  # ID do aluno/professor/colaborador associado
     nome: Optional[str] = None
+    foto_perfil: Optional[str] = None
 
 # Banco de dados PostgreSQL
 def get_db_connection():
@@ -249,10 +263,29 @@ def require_colaborador(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(status_code=403, detail="Acesso negado. Apenas colaboradores podem acessar este recurso.")
     return current_user
 
+def require_administrador(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.tipo_usuario != "administrador":
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas administradores podem acessar este recurso.")
+    return current_user
+
 def require_professor_or_colaborador(current_user: User = Depends(get_current_user)) -> User:
     if current_user.tipo_usuario not in ["professor", "colaborador"]:
         raise HTTPException(status_code=403, detail="Acesso negado. Apenas professores ou colaboradores podem acessar este recurso.")
     return current_user
+
+def require_professor_colaborador_or_administrador(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.tipo_usuario not in ["professor", "colaborador", "administrador"]:
+        raise HTTPException(status_code=403, detail="Acesso negado. Apenas professores, colaboradores ou administradores podem acessar este recurso.")
+    return current_user
+
+def require_self_or_admin():
+    """Permite que o usuário acesse seu próprio recurso ou que administradores acessem qualquer recurso"""
+    def check(current_user: User = Depends(get_current_user)):
+        # Administradores podem acessar qualquer recurso
+        if current_user.tipo_usuario == "administrador":
+            return current_user
+        return current_user
+    return check
 
 def parse_membros_list(membros: Optional[str]) -> List[str]:
     if not membros:
@@ -274,6 +307,8 @@ def get_user_nome(current_user: User, cursor=None) -> str:
         cursor.execute("SELECT nome FROM professores WHERE id = %s", (current_user.perfil_id,))
     elif current_user.tipo_usuario == "colaborador":
         cursor.execute("SELECT nome FROM colaboradores WHERE id = %s", (current_user.perfil_id,))
+    elif current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT nome FROM administradores WHERE id = %s", (current_user.perfil_id,))
     else:
         if close_conn:
             conn.close()
@@ -284,14 +319,42 @@ def get_user_nome(current_user: User, cursor=None) -> str:
     return row[0] if row else (current_user.nome or "")
 
 
+def get_user_foto_perfil(current_user: User, cursor=None) -> Optional[str]:
+    if not current_user.perfil_id:
+        return None
+    close_conn = False
+    if cursor is None:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        close_conn = True
+    if current_user.tipo_usuario == "aluno":
+        cursor.execute("SELECT foto_perfil FROM alunos WHERE id = %s", (current_user.perfil_id,))
+    elif current_user.tipo_usuario == "professor":
+        cursor.execute("SELECT foto_perfil FROM professores WHERE id = %s", (current_user.perfil_id,))
+    elif current_user.tipo_usuario == "colaborador":
+        cursor.execute("SELECT foto_perfil FROM colaboradores WHERE id = %s", (current_user.perfil_id,))
+    elif current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT foto_perfil FROM administradores WHERE id = %s", (current_user.perfil_id,))
+    else:
+        if close_conn:
+            conn.close()
+        return None
+    row = cursor.fetchone()
+    if close_conn:
+        conn.close()
+    return row[0] if row else None
+
+
 def enrich_user(current_user: User) -> User:
     nome = get_user_nome(current_user)
+    foto_perfil = get_user_foto_perfil(current_user)
     return User(
         id=current_user.id,
         email=current_user.email,
         tipo_usuario=current_user.tipo_usuario,
         perfil_id=current_user.perfil_id,
         nome=nome,
+        foto_perfil=foto_perfil,
     )
 
 
@@ -307,9 +370,20 @@ def is_project_member(current_user: User, projeto: dict, nome: Optional[str] = N
 
 
 def check_project_access(current_user: User, projeto_id: str) -> bool:
-    """Visualização de projeto: professor/colaborador veem todos; aluno só se membro."""
-    if current_user.tipo_usuario in ["professor", "colaborador"]:
+    """Visualização de projeto: administrador veem todos; professor/colaborador só se coordenador ou membro; aluno só se membro."""
+    if current_user.tipo_usuario == "administrador":
         return True
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM projetos WHERE id = %s", (projeto_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return False
+        projeto = dict_from_row(cursor, row)
+        conn.close()
+        return is_project_coordenador(current_user, projeto) or is_project_member(current_user, projeto)
     if current_user.tipo_usuario == "aluno":
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -345,14 +419,17 @@ def require_project_view(current_user: User, projeto_id: str) -> dict:
 
 
 def require_project_member(current_user: User, projeto: dict) -> None:
-    if current_user.tipo_usuario == "professor":
+    if current_user.tipo_usuario == "administrador":
         return
-    if current_user.tipo_usuario in ["aluno", "colaborador"]:
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        if is_project_coordenador(current_user, projeto):
+            return
+    if current_user.tipo_usuario == "aluno":
         if is_project_member(current_user, projeto):
             return
     raise HTTPException(
         status_code=403,
-        detail="Acesso negado. Você precisa ser membro deste projeto.",
+        detail="Acesso negado. Você precisa ser membro ou coordenador deste projeto.",
     )
 
 
@@ -361,33 +438,48 @@ def validate_coordenador_is_professor(coordenador: str) -> None:
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM professores WHERE nome = %s", (coordenador,))
     found = cursor.fetchone()
+    if not found:
+        cursor.execute("SELECT id FROM colaboradores WHERE nome = %s", (coordenador,))
+        found = cursor.fetchone()
+    if not found:
+        cursor.execute("SELECT id FROM administradores WHERE nome = %s", (coordenador,))
+        found = cursor.fetchone()
     conn.close()
     if not found:
         raise HTTPException(
             status_code=400,
-            detail="O coordenador deve ser um professor cadastrado.",
+            detail="O coordenador deve ser um professor, colaborador ou administrador cadastrado.",
         )
 
 
+def is_project_coordenador(current_user: User, projeto: dict) -> bool:
+    """Verifica se o usuário é o coordenador do projeto."""
+    nome_usuario = get_user_nome(current_user)
+    coordenador = (projeto.get("coordenador") or "").strip()
+    return coordenador == nome_usuario
+
+
 def can_manage_materials(current_user: User) -> bool:
-    return current_user.tipo_usuario in ["professor", "colaborador"]
+    return current_user.tipo_usuario == "administrador"
 
 
 def can_create_activity(current_user: User, projeto: dict) -> bool:
-    if current_user.tipo_usuario == "professor":
+    if current_user.tipo_usuario == "administrador":
         return True
-    if current_user.tipo_usuario in ["aluno", "colaborador"]:
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        return is_project_coordenador(current_user, projeto)
+    if current_user.tipo_usuario == "aluno":
         return is_project_member(current_user, projeto)
     return False
 
 
 def can_edit_activity(current_user: User, atividade: dict, projeto: dict) -> bool:
-    if current_user.tipo_usuario == "professor":
+    if current_user.tipo_usuario == "administrador":
         return True
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        return is_project_coordenador(current_user, projeto)
     if not is_project_member(current_user, projeto):
         return False
-    if current_user.tipo_usuario == "colaborador":
-        return True
     if current_user.tipo_usuario == "aluno":
         nome = get_user_nome(current_user)
         responsavel = (atividade.get("responsavel") or "").strip()
@@ -396,8 +488,10 @@ def can_edit_activity(current_user: User, atividade: dict, projeto: dict) -> boo
 
 
 def can_delete_activity(current_user: User, atividade: dict, projeto: dict) -> bool:
-    if current_user.tipo_usuario == "professor":
+    if current_user.tipo_usuario == "administrador":
         return True
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        return is_project_coordenador(current_user, projeto)
     if current_user.tipo_usuario == "aluno":
         if not is_project_member(current_user, projeto):
             return False
@@ -407,9 +501,11 @@ def can_delete_activity(current_user: User, atividade: dict, projeto: dict) -> b
 
 
 def can_manage_reuniao(current_user: User, projeto: dict) -> bool:
-    """Registro/edição de atas: professor ou membro do projeto (aluno/colaborador)."""
-    if current_user.tipo_usuario == "professor":
+    """Registro/edição de atas: administrador, coordenador (professor/colaborador) ou membro do projeto (aluno)."""
+    if current_user.tipo_usuario == "administrador":
         return True
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        return is_project_coordenador(current_user, projeto)
     return is_project_member(current_user, projeto)
 
 
@@ -431,7 +527,7 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                tipo_usuario TEXT NOT NULL CHECK (tipo_usuario IN ('aluno', 'professor', 'colaborador')),
+                tipo_usuario TEXT NOT NULL CHECK (tipo_usuario IN ('aluno', 'professor', 'colaborador', 'administrador')),
                 perfil_id TEXT,
                 refresh_token TEXT,
                 deleted_at TIMESTAMP,
@@ -478,7 +574,20 @@ def init_db():
                 data_cadastro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
+        # Tabela de administradores
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS administradores (
+                id TEXT PRIMARY KEY,
+                nome TEXT NOT NULL,
+                cpf TEXT UNIQUE NOT NULL,
+                telefone TEXT,
+                email TEXT,
+                deleted_at TIMESTAMP,
+                data_cadastro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Tabela de material_consumo
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS material_consumo (
@@ -570,6 +679,7 @@ def init_db():
         cursor.execute("ALTER TABLE alunos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         cursor.execute("ALTER TABLE professores ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         cursor.execute("ALTER TABLE colaboradores ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+        cursor.execute("ALTER TABLE administradores ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         cursor.execute("ALTER TABLE projetos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         cursor.execute("ALTER TABLE projeto_atividades ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
         cursor.execute("ALTER TABLE projeto_reunioes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
@@ -630,6 +740,9 @@ async def register(user_data: UserRegister):
         if user_data.tipo_usuario == "colaborador" and not user_data.cpf:
             conn.close()
             raise HTTPException(status_code=400, detail="CPF é obrigatório para colaboradores")
+        if user_data.tipo_usuario == "administrador" and not user_data.cpf:
+            conn.close()
+            raise HTTPException(status_code=400, detail="CPF é obrigatório para administradores")
 
         # Verificar se matrícula já existe (para alunos e professores)
         if user_data.tipo_usuario in ["aluno", "professor"] and user_data.matricula:
@@ -643,10 +756,13 @@ async def register(user_data: UserRegister):
                 print("[REGISTER] Matrícula já cadastrada")
                 raise HTTPException(status_code=400, detail="Matrícula já cadastrada")
 
-        # Verificar se CPF já existe (para colaboradores)
-        if user_data.tipo_usuario == "colaborador" and user_data.cpf:
+        # Verificar se CPF já existe (para colaboradores e administradores)
+        if user_data.tipo_usuario in ["colaborador", "administrador"] and user_data.cpf:
             print(f"[REGISTER] Verificando se CPF {user_data.cpf} já existe...")
-            cursor.execute("SELECT id FROM colaboradores WHERE cpf = %s", (user_data.cpf,))
+            if user_data.tipo_usuario == "colaborador":
+                cursor.execute("SELECT id FROM colaboradores WHERE cpf = %s", (user_data.cpf,))
+            else:
+                cursor.execute("SELECT id FROM administradores WHERE cpf = %s", (user_data.cpf,))
             if cursor.fetchone():
                 conn.close()
                 print("[REGISTER] CPF já cadastrado")
@@ -695,6 +811,12 @@ async def register(user_data: UserRegister):
             perfil_id = str(uuid.uuid4())
             cursor.execute(
                 "INSERT INTO colaboradores (id, nome, cpf, telefone, email, data_cadastro) VALUES (%s, %s, %s, %s, %s, %s)",
+                (perfil_id, user_data.nome, user_data.cpf, user_data.telefone, user_data.email, data_cadastro)
+            )
+        elif user_data.tipo_usuario == "administrador":
+            perfil_id = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO administradores (id, nome, cpf, telefone, email, data_cadastro) VALUES (%s, %s, %s, %s, %s, %s)",
                 (perfil_id, user_data.nome, user_data.cpf, user_data.telefone, user_data.email, data_cadastro)
             )
 
@@ -783,6 +905,8 @@ async def login(user_data: UserLogin):
             cursor.execute("SELECT nome FROM professores WHERE id = %s", (user_dict['perfil_id'],))
         elif user_dict['tipo_usuario'] == 'colaborador':
             cursor.execute("SELECT nome FROM colaboradores WHERE id = %s", (user_dict['perfil_id'],))
+        elif user_dict['tipo_usuario'] == 'administrador':
+            cursor.execute("SELECT nome FROM administradores WHERE id = %s", (user_dict['perfil_id'],))
         result = cursor.fetchone()
         if result:
             nome = result[0]
@@ -861,6 +985,8 @@ async def refresh_token(request: RefreshTokenRequest):
                 cursor.execute("SELECT nome FROM professores WHERE id = %s", (user_dict['perfil_id'],))
             elif user_dict['tipo_usuario'] == 'colaborador':
                 cursor.execute("SELECT nome FROM colaboradores WHERE id = %s", (user_dict['perfil_id'],))
+            elif user_dict['tipo_usuario'] == 'administrador':
+                cursor.execute("SELECT nome FROM administradores WHERE id = %s", (user_dict['perfil_id'],))
             result = cursor.fetchone()
             if result:
                 nome = result[0]
@@ -903,7 +1029,7 @@ async def refresh_token(request: RefreshTokenRequest):
 
 # Endpoints de Alunos
 @app.post("/alunos", response_model=Aluno)
-async def create_aluno(aluno: Aluno, current_user: User = Depends(require_professor)):
+async def create_aluno(aluno: Aluno, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -941,9 +1067,19 @@ async def get_alunos(current_user: User = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM alunos WHERE deleted_at IS NULL ORDER BY nome")
-    rows = cursor.fetchall()
-    alunos = [dict_from_row(cursor, row) for row in rows]
+    # Apenas administrador pode ver todos os alunos
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM alunos WHERE deleted_at IS NULL ORDER BY nome")
+        rows = cursor.fetchall()
+        alunos = [dict_from_row(cursor, row) for row in rows]
+    elif current_user.tipo_usuario == "aluno":
+        # Aluno só pode ver seus próprios dados
+        cursor.execute("SELECT * FROM alunos WHERE id = %s AND deleted_at IS NULL", (current_user.perfil_id,))
+        row = cursor.fetchone()
+        alunos = [dict_from_row(cursor, row)] if row else []
+    else:
+        # Professor e colaborador não podem ver alunos
+        alunos = []
 
     conn.close()
     return alunos
@@ -953,7 +1089,15 @@ async def get_aluno(aluno_id: str, current_user: User = Depends(get_current_user
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM alunos WHERE id = %s AND deleted_at IS NULL", (aluno_id,))
+    # Verificar permissão: administrador pode ver qualquer aluno, aluno só pode ver seus próprios dados
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM alunos WHERE id = %s AND deleted_at IS NULL", (aluno_id,))
+    elif current_user.tipo_usuario == "aluno" and current_user.perfil_id == aluno_id:
+        cursor.execute("SELECT * FROM alunos WHERE id = %s AND deleted_at IS NULL", (aluno_id,))
+    else:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
     row = cursor.fetchone()
     aluno = dict_from_row(cursor, row)
 
@@ -965,7 +1109,12 @@ async def get_aluno(aluno_id: str, current_user: User = Depends(get_current_user
     return aluno
 
 @app.put("/alunos/{aluno_id}", response_model=Aluno)
-async def update_aluno(aluno_id: str, aluno: Aluno, current_user: User = Depends(require_professor)):
+async def update_aluno(aluno_id: str, aluno: Aluno, current_user: User = Depends(require_self_or_admin())):
+    # Verificar se o usuário é admin ou está editando seu próprio perfil
+    print(f"DEBUG: current_user.tipo_usuario={current_user.tipo_usuario}, current_user.perfil_id={current_user.perfil_id}, aluno_id={aluno_id}")
+    if current_user.tipo_usuario != "administrador" and current_user.perfil_id != aluno_id:
+        raise HTTPException(status_code=403, detail=f"Acesso negado. Você só pode editar seu próprio perfil. (perfil_id={current_user.perfil_id}, aluno_id={aluno_id})")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -977,8 +1126,8 @@ async def update_aluno(aluno_id: str, aluno: Aluno, current_user: User = Depends
 
     try:
         cursor.execute(
-            "UPDATE alunos SET nome = %s, matricula = %s, curso = %s, telefone = %s, email = %s WHERE id = %s",
-            (aluno.nome, aluno.matricula, aluno.curso, aluno.telefone, aluno.email, aluno_id)
+            "UPDATE alunos SET nome = %s, matricula = %s, curso = %s, telefone = %s, email = %s, foto_perfil = %s WHERE id = %s",
+            (aluno.nome, aluno.matricula, aluno.curso, aluno.telefone, aluno.email, aluno.foto_perfil, aluno_id)
         )
         conn.commit()
     except Exception as e:
@@ -1001,7 +1150,7 @@ async def update_aluno(aluno_id: str, aluno: Aluno, current_user: User = Depends
     return updated_aluno
 
 @app.delete("/alunos/{aluno_id}")
-async def delete_aluno(aluno_id: str, current_user: User = Depends(require_professor)):
+async def delete_aluno(aluno_id: str, current_user: User = Depends(require_administrador)):
     conn = None
     try:
         conn = get_db_connection()
@@ -1031,7 +1180,7 @@ async def delete_aluno(aluno_id: str, current_user: User = Depends(require_profe
 
 # Endpoints de Professores
 @app.post("/professores", response_model=Professor)
-async def create_professor(professor: Professor, current_user: User = Depends(require_professor)):
+async def create_professor(professor: Professor, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1069,8 +1218,18 @@ async def get_professores(current_user: User = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM professores WHERE deleted_at IS NULL ORDER BY nome")
-    professores = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    # Apenas administrador pode ver todos os professores
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM professores WHERE deleted_at IS NULL ORDER BY nome")
+        professores = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    elif current_user.tipo_usuario == "professor":
+        # Professor só pode ver seus próprios dados
+        cursor.execute("SELECT * FROM professores WHERE id = %s AND deleted_at IS NULL", (current_user.perfil_id,))
+        row = cursor.fetchone()
+        professores = [dict_from_row(cursor, row)] if row else []
+    else:
+        # Aluno e colaborador não podem ver professores
+        professores = []
 
     conn.close()
     return professores
@@ -1080,7 +1239,15 @@ async def get_professor(professor_id: str, current_user: User = Depends(get_curr
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM professores WHERE id = %s AND deleted_at IS NULL", (professor_id,))
+    # Verificar permissão: administrador pode ver qualquer professor, professor só pode ver seus próprios dados
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM professores WHERE id = %s AND deleted_at IS NULL", (professor_id,))
+    elif current_user.tipo_usuario == "professor" and current_user.perfil_id == professor_id:
+        cursor.execute("SELECT * FROM professores WHERE id = %s AND deleted_at IS NULL", (professor_id,))
+    else:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
     professor = dict_from_row(cursor, cursor.fetchone())
 
     conn.close()
@@ -1091,7 +1258,11 @@ async def get_professor(professor_id: str, current_user: User = Depends(get_curr
     return professor
 
 @app.put("/professores/{professor_id}", response_model=Professor)
-async def update_professor(professor_id: str, professor: Professor, current_user: User = Depends(require_professor)):
+async def update_professor(professor_id: str, professor: Professor, current_user: User = Depends(require_self_or_admin())):
+    # Verificar se o usuário é admin ou está editando seu próprio perfil
+    if current_user.tipo_usuario != "administrador" and current_user.perfil_id != professor_id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Você só pode editar seu próprio perfil.")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1103,8 +1274,8 @@ async def update_professor(professor_id: str, professor: Professor, current_user
 
     try:
         cursor.execute(
-            "UPDATE professores SET nome = %s, matricula = %s, telefone = %s, email = %s WHERE id = %s",
-            (professor.nome, professor.matricula, professor.telefone, professor.email, professor_id)
+            "UPDATE professores SET nome = %s, matricula = %s, telefone = %s, email = %s, foto_perfil = %s WHERE id = %s",
+            (professor.nome, professor.matricula, professor.telefone, professor.email, professor.foto_perfil, professor_id)
         )
         conn.commit()
     except Exception as e:
@@ -1126,7 +1297,7 @@ async def update_professor(professor_id: str, professor: Professor, current_user
     return updated_professor
 
 @app.delete("/professores/{professor_id}")
-async def delete_professor(professor_id: str, current_user: User = Depends(require_professor)):
+async def delete_professor(professor_id: str, current_user: User = Depends(require_administrador)):
     conn = None
     try:
         conn = get_db_connection()
@@ -1156,7 +1327,7 @@ async def delete_professor(professor_id: str, current_user: User = Depends(requi
 
 # Endpoints de Colaboradores
 @app.post("/colaboradores", response_model=Colaborador)
-async def create_colaborador(colaborador: Colaborador, current_user: User = Depends(require_professor)):
+async def create_colaborador(colaborador: Colaborador, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1194,8 +1365,18 @@ async def get_colaboradores(current_user: User = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM colaboradores WHERE deleted_at IS NULL ORDER BY nome")
-    colaboradores = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    # Apenas administrador pode ver todos os colaboradores
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM colaboradores WHERE deleted_at IS NULL ORDER BY nome")
+        colaboradores = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    elif current_user.tipo_usuario == "colaborador":
+        # Colaborador só pode ver seus próprios dados
+        cursor.execute("SELECT * FROM colaboradores WHERE id = %s AND deleted_at IS NULL", (current_user.perfil_id,))
+        row = cursor.fetchone()
+        colaboradores = [dict_from_row(cursor, row)] if row else []
+    else:
+        # Aluno e professor não podem ver colaboradores
+        colaboradores = []
 
     conn.close()
     return colaboradores
@@ -1205,7 +1386,15 @@ async def get_colaborador(colaborador_id: str, current_user: User = Depends(get_
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM colaboradores WHERE id = %s AND deleted_at IS NULL", (colaborador_id,))
+    # Verificar permissão: administrador pode ver qualquer colaborador, colaborador só pode ver seus próprios dados
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM colaboradores WHERE id = %s AND deleted_at IS NULL", (colaborador_id,))
+    elif current_user.tipo_usuario == "colaborador" and current_user.perfil_id == colaborador_id:
+        cursor.execute("SELECT * FROM colaboradores WHERE id = %s AND deleted_at IS NULL", (colaborador_id,))
+    else:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
     colaborador = dict_from_row(cursor, cursor.fetchone())
 
     conn.close()
@@ -1216,7 +1405,11 @@ async def get_colaborador(colaborador_id: str, current_user: User = Depends(get_
     return colaborador
 
 @app.put("/colaboradores/{colaborador_id}", response_model=Colaborador)
-async def update_colaborador(colaborador_id: str, colaborador: Colaborador, current_user: User = Depends(require_professor)):
+async def update_colaborador(colaborador_id: str, colaborador: Colaborador, current_user: User = Depends(require_self_or_admin())):
+    # Verificar se o usuário é admin ou está editando seu próprio perfil
+    if current_user.tipo_usuario != "administrador" and current_user.perfil_id != colaborador_id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Você só pode editar seu próprio perfil.")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1228,8 +1421,8 @@ async def update_colaborador(colaborador_id: str, colaborador: Colaborador, curr
 
     try:
         cursor.execute(
-            "UPDATE colaboradores SET nome = %s, cpf = %s, telefone = %s, email = %s WHERE id = %s",
-            (colaborador.nome, colaborador.cpf, colaborador.telefone, colaborador.email, colaborador_id)
+            "UPDATE colaboradores SET nome = %s, cpf = %s, telefone = %s, email = %s, foto_perfil = %s WHERE id = %s",
+            (colaborador.nome, colaborador.cpf, colaborador.telefone, colaborador.email, colaborador.foto_perfil, colaborador_id)
         )
         conn.commit()
     except Exception as e:
@@ -1250,8 +1443,121 @@ async def update_colaborador(colaborador_id: str, colaborador: Colaborador, curr
     
     return updated_colaborador
 
+# Endpoints de Administradores
+@app.get("/administradores", response_model=List[Administrador])
+async def get_administradores(current_user: User = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Apenas administrador pode ver todos os administradores
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM administradores WHERE deleted_at IS NULL ORDER BY nome")
+        administradores = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    elif current_user.tipo_usuario == "administrador" and current_user.perfil_id:
+        # Administrador só pode ver seus próprios dados
+        cursor.execute("SELECT * FROM administradores WHERE id = %s AND deleted_at IS NULL", (current_user.perfil_id,))
+        row = cursor.fetchone()
+        administradores = [dict_from_row(cursor, row)] if row else []
+    else:
+        # Outros não podem ver administradores
+        administradores = []
+
+    conn.close()
+    return administradores
+
+@app.get("/administradores/{administrador_id}", response_model=Administrador)
+async def get_administrador(administrador_id: str, current_user: User = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verificar permissão: administrador pode ver qualquer administrador, administrador só pode ver seus próprios dados
+    if current_user.tipo_usuario == "administrador":
+        cursor.execute("SELECT * FROM administradores WHERE id = %s AND deleted_at IS NULL", (administrador_id,))
+    elif current_user.tipo_usuario == "administrador" and current_user.perfil_id == administrador_id:
+        cursor.execute("SELECT * FROM administradores WHERE id = %s AND deleted_at IS NULL", (administrador_id,))
+    else:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    administrador = dict_from_row(cursor, cursor.fetchone())
+
+    conn.close()
+
+    if not administrador:
+        raise HTTPException(status_code=404, detail="Administrador não encontrado")
+
+    return administrador
+
+@app.put("/administradores/{administrador_id}", response_model=Administrador)
+async def update_administrador(administrador_id: str, administrador: Administrador, current_user: User = Depends(require_self_or_admin())):
+    # Verificar se o usuário é admin ou está editando seu próprio perfil
+    if current_user.tipo_usuario != "administrador" and current_user.perfil_id != administrador_id:
+        raise HTTPException(status_code=403, detail="Acesso negado. Você só pode editar seu próprio perfil.")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verificar se CPF já existe (exceto para o próprio administrador)
+    cursor.execute("SELECT id FROM administradores WHERE cpf = %s AND id != %s", (administrador.cpf, administrador_id))
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="CPF já cadastrado")
+
+    try:
+        cursor.execute(
+            "UPDATE administradores SET nome = %s, cpf = %s, telefone = %s, email = %s, foto_perfil = %s WHERE id = %s",
+            (administrador.nome, administrador.cpf, administrador.telefone, administrador.email, administrador.foto_perfil, administrador_id)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        if "cpf" in str(e):
+            raise HTTPException(status_code=400, detail="CPF já existe")
+        else:
+            raise HTTPException(status_code=400, detail="Erro ao atualizar administrador")
+
+    cursor.execute("SELECT * FROM administradores WHERE id = %s", (administrador_id,))
+    updated_administrador = dict_from_row(cursor, cursor.fetchone())
+
+    conn.close()
+
+    if not updated_administrador:
+        raise HTTPException(status_code=404, detail="Administrador não encontrado")
+
+    return updated_administrador
+
+@app.delete("/administradores/{administrador_id}")
+async def delete_administrador(administrador_id: str, current_user: User = Depends(require_administrador)):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Soft delete
+        cursor.execute("UPDATE administradores SET deleted_at = %s WHERE id = %s", (datetime.now(), administrador_id))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Administrador não encontrado")
+
+        return {"message": "Administrador deletado com sucesso"}
+    except HTTPException:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        raise HTTPException(status_code=400, detail=f"Erro ao deletar administrador: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
+
 @app.delete("/colaboradores/{colaborador_id}")
-async def delete_colaborador(colaborador_id: str, current_user: User = Depends(require_professor)):
+async def delete_colaborador(colaborador_id: str, current_user: User = Depends(require_administrador)):
     conn = None
     try:
         conn = get_db_connection()
@@ -1281,7 +1587,7 @@ async def delete_colaborador(colaborador_id: str, current_user: User = Depends(r
 
 # Endpoints de Material de Consumo
 @app.post("/material-consumo", response_model=MaterialConsumo)
-async def create_material_consumo(material: MaterialConsumo, current_user: User = Depends(require_professor_or_colaborador)):
+async def create_material_consumo(material: MaterialConsumo, current_user: User = Depends(require_administrador)):
     # Validar quantidade não negativa
     if material.quantidade < 0:
         raise HTTPException(status_code=400, detail="Quantidade não pode ser negativa")
@@ -1329,7 +1635,7 @@ async def get_material_consumo_by_id(material_id: str, current_user: User = Depe
     return material
 
 @app.put("/material-consumo/{material_id}", response_model=MaterialConsumo)
-async def update_material_consumo(material_id: str, material: MaterialConsumo, current_user: User = Depends(require_professor_or_colaborador)):
+async def update_material_consumo(material_id: str, material: MaterialConsumo, current_user: User = Depends(require_administrador)):
     # Validar quantidade não negativa
     if material.quantidade < 0:
         raise HTTPException(status_code=400, detail="Quantidade não pode ser negativa")
@@ -1355,7 +1661,7 @@ async def update_material_consumo(material_id: str, material: MaterialConsumo, c
     return updated_material
 
 @app.delete("/material-consumo/{material_id}")
-async def delete_material_consumo(material_id: str, current_user: User = Depends(require_professor_or_colaborador)):
+async def delete_material_consumo(material_id: str, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1370,7 +1676,7 @@ async def delete_material_consumo(material_id: str, current_user: User = Depends
 
 # Endpoints de Material Permanente
 @app.post("/material-permanente", response_model=MaterialPermanente)
-async def create_material_permanente(material: MaterialPermanente, current_user: User = Depends(require_professor_or_colaborador)):
+async def create_material_permanente(material: MaterialPermanente, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -1422,7 +1728,7 @@ async def get_material_permanente_by_id(material_id: str, current_user: User = D
     return material
 
 @app.put("/material-permanente/{material_id}", response_model=MaterialPermanente)
-async def update_material_permanente(material_id: str, material: MaterialPermanente, current_user: User = Depends(require_professor_or_colaborador)):
+async def update_material_permanente(material_id: str, material: MaterialPermanente, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1451,7 +1757,7 @@ async def update_material_permanente(material_id: str, material: MaterialPermane
     return updated_material
 
 @app.delete("/material-permanente/{material_id}")
-async def delete_material_permanente(material_id: str, current_user: User = Depends(require_professor_or_colaborador)):
+async def delete_material_permanente(material_id: str, current_user: User = Depends(require_administrador)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -1466,7 +1772,7 @@ async def delete_material_permanente(material_id: str, current_user: User = Depe
 
 # Endpoints de Projetos
 @app.post("/projetos", response_model=Projeto)
-async def create_projeto(projeto: Projeto, current_user: User = Depends(require_professor)):
+async def create_projeto(projeto: Projeto, current_user: User = Depends(require_professor_colaborador_or_administrador)):
     validate_coordenador_is_professor(projeto.coordenador)
     # Validar datas
     if projeto.data_previsao < projeto.data_inicio:
@@ -1506,10 +1812,18 @@ async def get_projetos(current_user: User = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Professores e colaboradores podem ver todos os projetos
-    if current_user.tipo_usuario in ["professor", "colaborador"]:
+    # Administradores podem ver todos os projetos
+    if current_user.tipo_usuario == "administrador":
         cursor.execute("SELECT * FROM projetos WHERE deleted_at IS NULL ORDER BY data_cadastro DESC")
         projetos = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+    elif current_user.tipo_usuario in ["professor", "colaborador"]:
+        # Professores e colaboradores só podem ver projetos onde são coordenadores ou membros
+        cursor.execute("SELECT * FROM projetos WHERE deleted_at IS NULL ORDER BY data_cadastro DESC")
+        all_projetos = [dict_from_row(cursor, row) for row in cursor.fetchall()]
+        projetos = []
+        for projeto in all_projetos:
+            if is_project_coordenador(current_user, projeto) or is_project_member(current_user, projeto):
+                projetos.append(projeto)
     else:
         # Alunos só podem ver projetos onde são membros
         cursor.execute("SELECT * FROM projetos WHERE deleted_at IS NULL ORDER BY data_cadastro DESC")
@@ -1542,7 +1856,7 @@ async def get_projeto(projeto_id: str, current_user: User = Depends(get_current_
     return projeto
 
 @app.put("/projetos/{projeto_id}", response_model=Projeto)
-async def update_projeto(projeto_id: str, projeto: Projeto, current_user: User = Depends(require_professor)):
+async def update_projeto(projeto_id: str, projeto: Projeto, current_user: User = Depends(require_professor_colaborador_or_administrador)):
     validate_coordenador_is_professor(projeto.coordenador)
     # Validar datas
     if projeto.data_previsao < projeto.data_inicio:
@@ -1550,6 +1864,15 @@ async def update_projeto(projeto_id: str, projeto: Projeto, current_user: User =
             status_code=400,
             detail="A data de previsão de término deve ser igual ou posterior à data de início"
         )
+
+    # Verificar se professor/colaborador é coordenador do projeto
+    if current_user.tipo_usuario in ["professor", "colaborador"]:
+        projeto_existente = get_projeto_dict(projeto_id)
+        if not is_project_coordenador(current_user, projeto_existente):
+            raise HTTPException(
+                status_code=403,
+                detail="Acesso negado. Você precisa ser coordenador deste projeto para editá-lo."
+            )
 
     conn = None
     try:
@@ -1586,7 +1909,7 @@ async def update_projeto(projeto_id: str, projeto: Projeto, current_user: User =
             conn.close()
 
 @app.delete("/projetos/{projeto_id}")
-async def delete_projeto(projeto_id: str, current_user: User = Depends(require_professor)):
+async def delete_projeto(projeto_id: str, current_user: User = Depends(require_administrador)):
     conn = None
     try:
         conn = get_db_connection()
@@ -1995,7 +2318,7 @@ async def get_stats(current_user: User = Depends(get_current_user)):
         total_consumo = result[0] if result and result[0] is not None else 0
         
         conn.close()
-        
+
         return {
             "alunos": alunos_count,
             "professores": professores_count,
@@ -2015,6 +2338,50 @@ async def get_stats(current_user: User = Depends(get_current_user)):
             "material_permanente": 0,
             "total_items_consumo": 0
         }
+
+# Endpoint para upload de foto de perfil
+@app.post("/upload-foto-perfil")
+async def upload_foto_perfil(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Faz upload de uma foto de perfil e retorna a URL"""
+    import shutil
+
+    # Validar tipo de arquivo
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="Apenas arquivos de imagem são permitidos")
+
+    # Validar tamanho do arquivo (max 5MB)
+    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande. Máximo 5MB.")
+
+    # Criar diretório de uploads se não existir
+    upload_dir = "uploads/fotos_perfil"
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao criar diretório de uploads: {str(e)}")
+
+    # Gerar nome único para o arquivo
+    file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = os.path.join(upload_dir, unique_filename)
+
+    # Salvar arquivo
+    try:
+        with open(file_path, "wb") as buffer:
+            buffer.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar arquivo: {str(e)}")
+
+    # Retornar URL do arquivo
+    return {"foto_url": f"/uploads/fotos_perfil/{unique_filename}"}
+
+# Endpoint para servir arquivos estáticos de upload
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn

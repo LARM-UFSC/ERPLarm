@@ -48,6 +48,11 @@ export function Register({ onRegisterSuccess, onSwitchToLogin }: RegisterProps) 
         setLoading(false);
         return;
       }
+      if (formData.tipo_usuario === 'administrador' && !formData.cpf) {
+        setError('CPF é obrigatório para administradores');
+        setLoading(false);
+        return;
+      }
 
       console.log('Chamando API de registro...');
       const response = await authService.register(formData);
@@ -108,6 +113,7 @@ export function Register({ onRegisterSuccess, onSwitchToLogin }: RegisterProps) 
                   <SelectItem value="aluno">Aluno</SelectItem>
                   <SelectItem value="professor">Professor</SelectItem>
                   <SelectItem value="colaborador">Colaborador</SelectItem>
+                  <SelectItem value="administrador">Administrador</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -200,6 +206,22 @@ export function Register({ onRegisterSuccess, onSwitchToLogin }: RegisterProps) 
             )}
             
             {formData.tipo_usuario === 'colaborador' && (
+              <div className="space-y-2">
+                <Label htmlFor="cpf">CPF</Label>
+                <Input
+                  id="cpf"
+                  type="text"
+                  placeholder="000.000.000-00"
+                  value={formData.cpf}
+                  onChange={(e) => setFormData({ ...formData, cpf: e.target.value })}
+                  required
+                  disabled={loading}
+                  className="h-12"
+                />
+              </div>
+            )}
+
+            {formData.tipo_usuario === 'administrador' && (
               <div className="space-y-2">
                 <Label htmlFor="cpf">CPF</Label>
                 <Input

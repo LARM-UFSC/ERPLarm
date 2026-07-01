@@ -14,6 +14,7 @@ export interface Aluno {
   curso: string;
   telefone?: string;
   email?: string;
+  foto_perfil?: string;
   data_cadastro: string;
 }
 
@@ -23,6 +24,7 @@ export interface Professor {
   matricula: string;
   telefone?: string;
   email?: string;
+  foto_perfil?: string;
   data_cadastro: string;
 }
 
@@ -32,6 +34,17 @@ export interface Colaborador {
   cpf: string;
   telefone?: string;
   email?: string;
+  foto_perfil?: string;
+  data_cadastro: string;
+}
+
+export interface Administrador {
+  id: string;
+  nome: string;
+  cpf: string;
+  telefone?: string;
+  email?: string;
+  foto_perfil?: string;
   data_cadastro: string;
 }
 
@@ -116,7 +129,7 @@ export interface UserLogin {
 export interface UserRegister {
   email: string;
   password: string;
-  tipo_usuario: 'aluno' | 'professor' | 'colaborador';
+  tipo_usuario: 'aluno' | 'professor' | 'colaborador' | 'administrador';
   nome: string;
   matricula?: string;
   curso?: string;
@@ -136,9 +149,10 @@ export interface Token {
 export interface User {
   id: string;
   email: string;
-  tipo_usuario: 'aluno' | 'professor' | 'colaborador';
+  tipo_usuario: 'aluno' | 'professor' | 'colaborador' | 'administrador';
   perfil_id?: string;
   nome?: string;
+  foto_perfil?: string;
 }
 
 // Função helper para requisições

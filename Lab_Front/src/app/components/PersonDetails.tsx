@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, User, Mail, Phone, GraduationCap, Briefcase, FolderKanban, CheckCircle, Calendar, Users } from 'lucide-react';
+import { ArrowLeft, User, Mail, Phone, GraduationCap, Briefcase, FolderKanban, CheckCircle, Calendar, Users, UserCircle } from 'lucide-react';
 import { Projeto, ProjetoAtividade, Aluno, Professor, Colaborador, projetosService, projetoAtividadesService } from '../../services/api';
 
 type Pessoa = (Aluno & { tipo: 'aluno' }) | (Professor & { tipo: 'professor' }) | (Colaborador & { tipo: 'colaborador' });
@@ -103,8 +103,18 @@ export function PersonDetails({ pessoa, onBack, onOpenProjects }: PersonDetailsP
           <ArrowLeft size={24} />
         </button>
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-muted rounded-full">
-            {getTipoIcon()}
+          <div className="relative">
+            {pessoa.foto_perfil ? (
+              <img
+                src={`http://localhost:8000${pessoa.foto_perfil}`}
+                alt={`Foto de ${pessoa.nome}`}
+                className="w-16 h-16 rounded-full object-cover border-2 border-green-500"
+              />
+            ) : (
+              <div className="p-3 bg-muted rounded-full">
+                {getTipoIcon()}
+              </div>
+            )}
           </div>
           <div>
             <h2 className="text-2xl font-bold">{pessoa.nome}</h2>
