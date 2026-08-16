@@ -28,7 +28,7 @@ Estagio/
 
 1. **Clonar o repositório e navegar até a pasta**
    ```bash
-   cd /Users/mac/Documents/2026.1/Estagio/Estagio
+   cd ./ERPLarm
    ```
 
 2. **Configurar variáveis de ambiente**
