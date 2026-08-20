@@ -9,14 +9,14 @@ Agora o frontend usa uma variável de ambiente `VITE_API_BASE_URL` para configur
 ## Como Configurar no Servidor
 
 ### 1. Criar arquivo .env no servidor
-No diretório do projeto (onde está o docker-compose.yml), crie um arquivo `.env`:
+No diretório do projeto (onde está o docker-compose.yml), crie um arquivo `.env`(Já criado):
 
 ```bash
 cd /caminho/do/projeto/ERPLarm
 nano .env
 ```
 
-Adicione o seguinte conteúdo (substitua com seu domínio/IP):
+Adicionei o seguinte conteúdo (substitua com seu domínio/IP):
 
 ```env
 # URL do Backend (substitua com seu domínio ou IP)
